@@ -91,6 +91,7 @@ const uint16_t COL_BLUE   = 0x041F;
 String textColorKey = "standard";
 String unitKey = "metric"; // metric = C/mm, imperial = F/in
 String regionFormatKey = "europe"; // europe = 24h + dd.mm.yyyy, us = 12h + mm/dd/yyyy
+String timezoneKey = "europe_central";
 
 // =========================================================
 // LAYOUT
@@ -248,6 +249,72 @@ const char* homeSlotLabel(int slot) {
     case 2: return "Bottom left";
     case 3: return "Bottom right";
     default: return "Slot";
+  }
+}
+
+const char* timezonePosixByKey(const String& key) {
+  if (key == "utc") return "UTC0";
+  if (key == "europe_west") return "WET0WEST,M3.5.0/1,M10.5.0";
+  if (key == "europe_central") return "CET-1CEST,M3.5.0/2,M10.5.0/3";
+  if (key == "europe_east") return "EET-2EEST,M3.5.0/3,M10.5.0/4";
+  if (key == "uk") return "GMT0BST,M3.5.0/1,M10.5.0";
+  if (key == "us_eastern") return "EST5EDT,M3.2.0/2,M11.1.0/2";
+  if (key == "us_central") return "CST6CDT,M3.2.0/2,M11.1.0/2";
+  if (key == "us_mountain") return "MST7MDT,M3.2.0/2,M11.1.0/2";
+  if (key == "us_pacific") return "PST8PDT,M3.2.0/2,M11.1.0/2";
+  if (key == "asia_tokyo") return "JST-9";
+  if (key == "australia_sydney") return "AEST-10AEDT,M10.1.0,M4.1.0/3";
+  return "CET-1CEST,M3.5.0/2,M10.5.0/3";
+}
+
+const char* timezoneLabelByKey(const String& key) {
+  if (key == "utc") return "UTC";
+  if (key == "europe_west") return "Western Europe";
+  if (key == "europe_central") return "Central Europe";
+  if (key == "europe_east") return "Eastern Europe";
+  if (key == "uk") return "United Kingdom";
+  if (key == "us_eastern") return "US Eastern";
+  if (key == "us_central") return "US Central";
+  if (key == "us_mountain") return "US Mountain";
+  if (key == "us_pacific") return "US Pacific";
+  if (key == "asia_tokyo") return "Japan";
+  if (key == "australia_sydney") return "Australia East";
+  return "Central Europe";
+}
+
+String sanitizeTimezoneKey(const String& key) {
+  const char* supported[] = {
+    "utc", "europe_west", "europe_central", "europe_east", "uk",
+    "us_eastern", "us_central", "us_mountain", "us_pacific",
+    "asia_tokyo", "australia_sydney"
+  };
+  for (const char* supportedKey : supported) {
+    if (key == supportedKey) return key;
+  }
+  return "europe_central";
+}
+
+void applyDeviceTimezoneByKey(const String& key) {
+  timezoneKey = sanitizeTimezoneKey(key);
+  setenv("TZ", timezonePosixByKey(timezoneKey), 1);
+  tzset();
+}
+
+void appendTimezoneOptions(String& page, const String& selectedKey) {
+  const char* keys[] = {
+    "utc", "europe_west", "europe_central", "europe_east", "uk",
+    "us_eastern", "us_central", "us_mountain", "us_pacific",
+    "asia_tokyo", "australia_sydney"
+  };
+
+  for (const char* key : keys) {
+    page += "<option value='";
+    page += key;
+    page += "'";
+    if (selectedKey == key) page += " selected";
+    page += ">";
+    page += timezoneLabelByKey(key);
+    page += "</option>";
   }
 }
 
@@ -883,6 +950,7 @@ void loadStoredSettings() {
   sleepIntervalMin = prefs.getInt("sleepMin", 10);
   unitKey          = prefs.getString("units", "metric");
   regionFormatKey  = prefs.getString("region", "europe");
+  timezoneKey      = sanitizeTimezoneKey(prefs.getString("tz", "europe_central"));
   flashModeEnabled = prefs.getBool("flashMode", false);
   wifiEnabled      = prefs.getBool("wifiEnabled", true);
 
@@ -901,6 +969,7 @@ void loadStoredSettings() {
   buddyNickname.trim();
   applyThemeByKey(accent, bg);
   applyTextColorByKey(txt);
+  applyDeviceTimezoneByKey(timezoneKey);
 }
 
 void resetDataCaches() {
@@ -2059,6 +2128,7 @@ void handleRoot() {
   String txt    = prefs.getString("text", "standard");
   String units  = prefs.getString("units", "metric");
   String region = prefs.getString("region", "europe");
+  String tz     = sanitizeTimezoneKey(prefs.getString("tz", "europe_central"));
   String nickname = prefs.getString("nickname", "");
   bool flashMode = prefs.getBool("flashMode", false);
   String homeSlotKeys[HOME_SLOT_COUNT];
@@ -2125,7 +2195,7 @@ void handleRoot() {
   page += "</style></head><body><div class='wrap'>";
   page += "<div class='hero'>";
   page += "<h1>Deskbuddy</h1>";
-  page += "<p>Adjust notes, colors, system settings, and location from your browser.</p>";
+  page += "<p>Shape Deskbuddy into your own desk companion with widgets, notes, colors, and smart daily tools.</p>";
   page += "<div class='ip'>ESP IP: ";
   page += WiFi.localIP().toString();
   page += "</div></div>";
@@ -2229,6 +2299,9 @@ void handleRoot() {
   page += "<option value='europe'" + String(region=="europe"?" selected":"") + ">European: dd.mm.yyyy</option>";
   page += "<option value='us'" + String(region=="us"?" selected":"") + ">US: mm/dd/yyyy</option>";
   page += "</select></div>";
+  page += "<div><label class='label'>Time zone</label><select name='tz'>";
+  appendTimezoneOptions(page, tz);
+  page += "</select></div>";
   page += "</div>";
   page += "</div>";
   page += "<div class='settings-block'><span class='settings-title'>Timer</span><div class='settings-desc'>Choose the six quick timers shown in the popup menu.</div><div class='timer-slot-grid'>";
@@ -2308,6 +2381,7 @@ void handleSave() {
   String newText   = server.hasArg("text") ? server.arg("text") : "standard";
   String newUnits  = server.hasArg("units") ? server.arg("units") : "metric";
   String newRegion = server.hasArg("region") ? server.arg("region") : "europe";
+  String newTz     = server.hasArg("tz") ? server.arg("tz") : timezoneKey;
   String newLoc    = server.hasArg("locname") ? server.arg("locname") : locationName;
   String newNickname = server.hasArg("nickname") ? server.arg("nickname") : buddyNickname;
   HomeWidgetType newHomeSlots[HOME_SLOT_COUNT];
@@ -2330,6 +2404,7 @@ void handleSave() {
   if (newNickname.length() > 24) newNickname = newNickname.substring(0, 24);
   if (newUnits != "metric" && newUnits != "imperial") newUnits = "metric";
   if (newRegion != "europe" && newRegion != "us") newRegion = "europe";
+  newTz = sanitizeTimezoneKey(newTz);
 
   int newSleepMin = server.hasArg("sleepMin") ? server.arg("sleepMin").toInt() : sleepIntervalMin;
   sleepIntervalMin = constrain(newSleepMin, 0, 120);
@@ -2347,6 +2422,7 @@ void handleSave() {
   LNG = newLng;
   unitKey = newUnits;
   regionFormatKey = newRegion;
+  timezoneKey = newTz;
   flashModeEnabled = newFlashMode;
   for (int i = 0; i < HOME_SLOT_COUNT; i++) {
     homeWidgetSlots[i] = newHomeSlots[i];
@@ -2365,6 +2441,7 @@ void handleSave() {
   prefs.putString("text", newText);
   prefs.putString("units", unitKey);
   prefs.putString("region", regionFormatKey);
+  prefs.putString("tz", timezoneKey);
   prefs.putString("nickname", buddyNickname);
   prefs.putString("locname", locationName);
   prefs.putFloat("lat", LAT);
@@ -2382,6 +2459,7 @@ void handleSave() {
 
   applyThemeByKey(newAccent, newBg);
   applyTextColorByKey(newText);
+  applyDeviceTimezoneByKey(timezoneKey);
   if (!sleepDimmed && !sleepOff) setBacklight(BL_FULL);
 
   notesDirty = true;
@@ -2527,7 +2605,7 @@ void setup() {
   connectWiFi(true);
 
   tft.drawString("Syncing time...", 10, 58, 2);
-  configTzTime("CET-1CEST,M3.5.0/2,M10.5.0/3",
+  configTzTime(timezonePosixByKey(timezoneKey),
                "pool.ntp.org", "time.google.com", "time.cloudflare.com");
   waitForNtpTime();
 
