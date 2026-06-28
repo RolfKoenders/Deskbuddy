@@ -24,7 +24,7 @@ The ESP32-2432S028 is a self-contained board with a 240×320 resistive touch dis
 
 | Page | What it shows |
 |------|---------------|
-| **Home** | Clock, week number, sunrise/sunset times, and 4 configurable widgets |
+| **Home** | Clock, week number, context clock, sunrise/sunset times, and 4 configurable widgets |
 | **Weather** | Detailed weather: temperature range, rain, wind, UV index, KP index, sun event |
 | **Habits** | Daily habit tracker with 6 habits, streaks, and tap-to-check |
 | **Home Assistant** | Live values from up to 4 HA sensor entities |
@@ -53,18 +53,19 @@ Choose any 4 from:
 
 **Accents:** Standard · Cyan · Ice · White · Mint · Green · Blue · Purple · Pink · Orange · Amber · Red
 
-All theme changes apply instantly via the browser UI.  No reflashing needed.
+All theme changes apply instantly via the browser UI. No reflashing needed.
 
 ### Other
 
-- Auto-dimming and manual dim/off sleep modes
-- Touch to wake
-- NTP time sync with timezone selection (UTC through UTC+12, with DST for Europe, US, AU and more)
-- Metric and imperial units
-- European and US date/time format
+- Context clock: show a second timezone on the clock card (great for remote teams)
+- Eye break reminders: 20-20-20 rule overlay every N minutes, auto-dismisses after 20 seconds
+- Movement reminders: "Time to move!" overlay every N minutes, tap to dismiss
+- Auto-dimming and manual dim/off sleep modes, touch to wake
+- NTP time sync with timezone selection (UTC through UTC+12, DST support for Europe, US, AU and more)
+- Metric and imperial units, European and US date/time format
 - Per-device nickname displayed in the title bar
 - Sticky Notes REST API (`POST /api/note`) to push notes from automations or scripts
-- Home Assistant webhook support
+- OTA firmware updates: flash new firmware directly from the browser, no USB needed after initial setup
 
 ---
 
@@ -97,14 +98,32 @@ cd Deskbuddy
 cp include/secrets.h.example include/secrets.h
 # Edit secrets.h: add WiFi credentials and your city's coordinates
 
-# 3. Flash
+# 3. Flash over USB
 pio run --target upload
 
 # 4. Open the device web UI
 # Check serial monitor for the IP address, then open it in your browser
 ```
 
-Or use the **Python configurator** for a browser-based build & flash UI. See [SETUP_GUIDE.md](SETUP_GUIDE.md#configurator).
+Or use the **Python configurator** for a browser-based build, flash, and OTA tool. See [SETUP_GUIDE.md](SETUP_GUIDE.md#configurator).
+
+After the initial USB flash, future updates can be pushed wirelessly using the OTA feature.
+
+---
+
+## Flashing
+
+Deskbuddy supports three ways to get firmware onto the device:
+
+| Method | When to use |
+|--------|-------------|
+| `pio run --target upload` (USB) | Initial setup, or after changing `secrets.h` |
+| Configurator "Compile & Flash" (USB) | Same as above, with a browser UI |
+| Configurator "Flash OTA" (WiFi) | After initial setup — no USB cable needed |
+
+The OTA option in the configurator compiles the firmware and pushes it to the device over WiFi in one click. The device reboots automatically when the upload completes.
+
+You can also upload a `.bin` manually at `http://<device-ip>/update`.
 
 ---
 
@@ -114,9 +133,11 @@ Once the device is on your network, open its IP address in any browser. From the
 
 - Theme (background + accent + text color)
 - Widget layout (which 4 widgets appear on the home screen)
+- Context clock (second timezone + short label)
 - Location name, latitude, longitude
 - Timezone and units
 - Focus timer presets
+- Eye break and movement reminder intervals
 - Nickname
 - Sleep/dim behavior
 
@@ -153,7 +174,7 @@ In the device web UI, configure the HA base URL, bearer token, and up to 4 entit
 
 ## Credits
 
-This project started as a fork of [LextZip/Deskbuddy](https://github.com/LextZip/Deskbuddy) (MIT License) and has since been substantially rewritten: display library migrated from TFT_eSPI to LovyanGFX, new widget system, configurator, Home Assistant integration, habit tracker, hydration tracker, and theming system added.
+This project started as a fork of [LextZip/Deskbuddy](https://github.com/LextZip/Deskbuddy) (MIT License) and has since been substantially rewritten: display library migrated from TFT_eSPI to LovyanGFX, new widget system, configurator, Home Assistant integration, habit tracker, hydration tracker, theming system, OTA updates, context clock, and reminders added.
 
 ---
 
