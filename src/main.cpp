@@ -11,6 +11,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <Update.h>
 #include "LGFX_config.hpp"
 #include "secrets.h"
 #include <time.h>
@@ -533,6 +534,31 @@ int    haPageTab    = 0;  // 0=sensors 1=controls
 time_t lastHaFetch  = 0;
 const uint32_t HA_INTERVAL_SEC = 30;
 String cacheHaPage  = "";
+
+// =========================================================
+// CONTEXT CLOCK
+// =========================================================
+String tz2Key   = "";   // posix key for secondary timezone, empty = disabled
+String tz2Label = "";   // short display label, e.g. "NYC"
+
+// =========================================================
+// REMINDERS
+// =========================================================
+bool eyeBreakEnabled    = false;
+int  eyeBreakIntervalMin = 20;
+bool moveEnabled        = false;
+int  moveIntervalMin    = 45;
+
+unsigned long lastEyeBreakMs  = 0;
+bool          eyeBreakActive  = false;
+unsigned long eyeBreakStartMs = 0;
+const unsigned long EYE_BREAK_DURATION_MS = 20000UL;
+
+unsigned long lastMoveMs  = 0;
+bool          moveActive  = false;
+
+String cacheEyeBreak = "";
+String cacheMove     = "";
 
 // =========================================================
 // SLEEP / BACKLIGHT
@@ -1125,6 +1151,19 @@ void loadStoredSettings() {
   habitLastDate      = prefs.getString("habDate", "");
   ambientColorEnabled = prefs.getBool("ambColor", false);
 
+  // Context clock
+  tz2Key   = prefs.getString("tz2", "");
+  tz2Label = prefs.getString("tz2label", "");
+  tz2Label.trim();
+
+  // Reminders
+  eyeBreakEnabled     = prefs.getBool("eyeBreak", false);
+  eyeBreakIntervalMin = constrain(prefs.getInt("eyeBreakMin", 20), 5, 120);
+  moveEnabled         = prefs.getBool("moveRemind", false);
+  moveIntervalMin     = constrain(prefs.getInt("moveMin", 45), 5, 120);
+  lastEyeBreakMs      = millis();
+  lastMoveMs          = millis();
+
   // Hydration
   hydrationCount = prefs.getInt("hydCount", 0);
   hydrationDate  = prefs.getString("hydDate", "");
@@ -1611,6 +1650,7 @@ void drawClockCardSprite(bool force = false) {
 
   String weekBuf = "W" + weekNumberText();
   String combined = timeBuf + "|" + dateBuf + "|" + weekBuf + "|" + sr + "|" + ss + "|" +
+                    tz2Key + "|" + tz2Label + "|" +
                     String(COL_ACCENT) + "|" + String(COL_TEXT);
 
   if (!force && combined == cacheClock) return;
@@ -1638,6 +1678,16 @@ void drawClockCardSprite(bool force = false) {
   sprClock.drawString(dateBuf, 10, 45, 2);
   int dateTextW = sprClock.textWidth(dateBuf.c_str(), lgfxFont(2));
   sprClock.drawString(weekBuf, 10 + dateTextW + 7, 45, 2);
+
+  if (tz2Key.length() > 0 && tz2Label.length() > 0) {
+    const char* posix2 = timezonePosixByKey(tz2Key);
+    setenv("TZ", posix2, 1); tzset();
+    struct tm tm2; localtime_r(&now, &tm2);
+    setenv("TZ", timezonePosixByKey(timezoneKey), 1); tzset();
+    String t2Buf = formatClockParts(tm2, false);
+    sprClock.setTextColor(COL_ACCENT, COL_PANEL);
+    sprClock.drawString(tz2Label + " " + t2Buf, 10, 57, 1);
+  }
 
   drawCleanSunIcon(sprClock, 151, 22, COL_ACCENT);
   drawMoonIcon(sprClock, 151, 50, COL_ACCENT);
@@ -1871,6 +1921,45 @@ void drawTimerDoneOverlay(bool force = false) {
     tft.setTextColor(COL_DIM, COL_PANEL_ALT);
     tft.drawCentreString(countdown.c_str(), TIMER_DONE_X + TIMER_DONE_W / 2, TIMER_DONE_Y + 82, 1);
   }
+}
+
+// =========================================================
+// REMINDER OVERLAYS
+// =========================================================
+void drawEyeBreakOverlay() {
+  unsigned long elapsed = millis() - eyeBreakStartMs;
+  int remaining = max(0, (int)((EYE_BREAK_DURATION_MS - elapsed) / 1000) + 1);
+  String key = String(remaining);
+  if (key == cacheEyeBreak) return;
+  cacheEyeBreak = key;
+
+  tft.fillScreen(COL_BG);
+  tft.fillRoundRect(20, 80, 200, 160, 14, COL_PANEL_ALT);
+  tft.drawRoundRect(20, 80, 200, 160, 14, COL_ACCENT);
+
+  tft.setTextColor(COL_ACCENT, COL_PANEL_ALT);
+  tft.drawCentreString("Eye break", 120, 98, 4);
+  tft.setTextColor(COL_TEXT, COL_PANEL_ALT);
+  tft.drawCentreString("Look 6m away", 120, 148, 2);
+  tft.setTextColor(COL_DIM, COL_PANEL_ALT);
+  tft.drawCentreString(String(remaining) + "s", 120, 172, 2);
+  tft.drawCentreString("or tap to dismiss", 120, 210, 1);
+}
+
+void drawMoveReminderOverlay() {
+  if (cacheMove == "1") return;
+  cacheMove = "1";
+
+  tft.fillScreen(COL_BG);
+  tft.fillRoundRect(20, 80, 200, 160, 14, COL_PANEL_ALT);
+  tft.drawRoundRect(20, 80, 200, 160, 14, COL_ACCENT);
+
+  tft.setTextColor(COL_ACCENT, COL_PANEL_ALT);
+  tft.drawCentreString("Move!", 120, 98, 4);
+  tft.setTextColor(COL_TEXT, COL_PANEL_ALT);
+  tft.drawCentreString("Time to stretch", 120, 148, 2);
+  tft.setTextColor(COL_DIM, COL_PANEL_ALT);
+  tft.drawCentreString("Tap anywhere to dismiss", 120, 210, 1);
 }
 
 // =========================================================
@@ -2966,6 +3055,60 @@ void handleRoot() {
   page += "</div><div class='footer-note'>Enter your city's latitude and longitude (e.g. from maps.google.com).</div></div>";
   page += "</div></div>";
 
+  // Context clock
+  page += "<div class='panel' data-panel='ctx-clock'>";
+  page += "<button type='button' class='panel-toggle' aria-expanded='false'><h2>Context Clock</h2><span class='panel-chevron'>&#9662;</span></button>";
+  page += "<div class='panel-body' style='display:none'>";
+  page += "<div class='footer-note' style='margin-bottom:12px;'>Show a second timezone on the clock card. Leave label empty to disable.</div>";
+  page += "<div class='settings-grid'>";
+  page += "<div><label class='label'>Label (e.g. NYC, Tokyo)</label><input name='tz2label' maxlength='8' value='" + htmlEscape(tz2Label) + "'></div>";
+  page += "<div><label class='label'>Timezone</label><select name='tz2'>";
+  page += "<option value=''>-- Disabled --</option>";
+  // reuse same tz list helper inline
+  auto tzOpt2 = [&](const String& key, const String& label) {
+    page += "<option value='" + key + "'" + (tz2Key == key ? " selected" : "") + ">" + label + "</option>";
+  };
+  tzOpt2("utc","UTC");
+  tzOpt2("europe_west","Western Europe (WET)");
+  tzOpt2("uk","UK / Ireland");
+  tzOpt2("europe_central","Central Europe (CET)");
+  tzOpt2("europe_east","Eastern Europe (EET)");
+  tzOpt2("us_eastern","US Eastern (ET)");
+  tzOpt2("us_central","US Central (CT)");
+  tzOpt2("us_mountain","US Mountain (MT)");
+  tzOpt2("us_pacific","US Pacific (PT)");
+  tzOpt2("canada_atlantic","Canada Atlantic");
+  tzOpt2("brazil_east","Brazil (BRT)");
+  tzOpt2("argentina","Argentina (ART)");
+  tzOpt2("africa_south","South Africa (SAST)");
+  tzOpt2("middle_east_gulf","Gulf (GST)");
+  tzOpt2("india","India (IST)");
+  tzOpt2("thailand","Thailand (ICT)");
+  tzOpt2("china","China (CST)");
+  tzOpt2("asia_tokyo","Japan (JST)");
+  tzOpt2("korea","Korea (KST)");
+  tzOpt2("australia_sydney","Australia East (AEST)");
+  tzOpt2("new_zealand","New Zealand (NZST)");
+  page += "</select></div>";
+  page += "</div></div></div>";
+
+  // Reminders
+  page += "<div class='panel' data-panel='reminders'>";
+  page += "<button type='button' class='panel-toggle' aria-expanded='false'><h2>Reminders</h2><span class='panel-chevron'>&#9662;</span></button>";
+  page += "<div class='panel-body' style='display:none'>";
+  page += "<div class='settings-grid'>";
+  page += "<div><span class='settings-title'>Eye break (20-20-20)</span>"
+          "<label style='display:flex;align-items:center;gap:10px;color:#edf2f7;margin-bottom:10px;'>"
+          "<input type='checkbox' name='eyeBreak' value='1'" + String(eyeBreakEnabled ? " checked" : "") + " style='width:auto;'>Enable eye break reminder</label>"
+          "<label class='label'>Every (minutes)</label>"
+          "<input type='number' name='eyeBreakMin' min='5' max='120' value='" + String(eyeBreakIntervalMin) + "'></div>";
+  page += "<div><span class='settings-title'>Movement reminder</span>"
+          "<label style='display:flex;align-items:center;gap:10px;color:#edf2f7;margin-bottom:10px;'>"
+          "<input type='checkbox' name='moveRemind' value='1'" + String(moveEnabled ? " checked" : "") + " style='width:auto;'>Enable movement reminder</label>"
+          "<label class='label'>Every (minutes)</label>"
+          "<input type='number' name='moveMin' min='5' max='120' value='" + String(moveIntervalMin) + "'></div>";
+  page += "</div></div></div>";
+
   page += "<div class='panel' data-panel='widgets'>";
   page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Widget Customization</h2><span class='panel-chevron'>&#9662;</span></button>";
   page += "<div class='panel-body'>";
@@ -3149,6 +3292,9 @@ void handleRoot() {
   page += "});";
   page += "})();";
   page += "</script>";
+  page += "<div style='text-align:center;padding:20px 0 8px;'>"
+          "<a href='/update' style='font-size:12px;color:#555;text-decoration:none;'>Update firmware</a>"
+          "</div>";
   page += "</div></body></html>";
 
   server.send(200, "text/html; charset=utf-8", page);
@@ -3228,6 +3374,25 @@ void handleSave() {
   prefs.putFloat("lng", LNG);
   prefs.putInt("sleepMin", sleepIntervalMin);
   prefs.putBool("flashMode", flashModeEnabled);
+
+  // Context clock
+  tz2Key   = server.hasArg("tz2") ? server.arg("tz2") : "";
+  tz2Label = server.hasArg("tz2label") ? server.arg("tz2label") : "";
+  tz2Label.trim();
+  if (tz2Label.length() > 8) tz2Label = tz2Label.substring(0, 8);
+  if (tz2Key.length() == 0) tz2Label = "";
+  prefs.putString("tz2", tz2Key);
+  prefs.putString("tz2label", tz2Label);
+
+  // Reminders
+  eyeBreakEnabled     = server.hasArg("eyeBreak");
+  eyeBreakIntervalMin = constrain(server.hasArg("eyeBreakMin") ? server.arg("eyeBreakMin").toInt() : 20, 5, 120);
+  moveEnabled         = server.hasArg("moveRemind");
+  moveIntervalMin     = constrain(server.hasArg("moveMin") ? server.arg("moveMin").toInt() : 45, 5, 120);
+  prefs.putBool("eyeBreak", eyeBreakEnabled);
+  prefs.putInt("eyeBreakMin", eyeBreakIntervalMin);
+  prefs.putBool("moveRemind", moveEnabled);
+  prefs.putInt("moveMin", moveIntervalMin);
 
   // Habits
   ambientColorEnabled = server.hasArg("ambColor");
@@ -3375,6 +3540,30 @@ void handleApiStatus() {
   server.send(200, "application/json", json);
 }
 
+void handleOtaPage() {
+  String page = "<!doctype html><html><head>"
+    "<meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Deskbuddy — Update firmware</title>"
+    "<style>body{font-family:sans-serif;background:#111;color:#eee;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+    "h2{margin-bottom:8px;}p{color:#888;font-size:14px;margin-bottom:24px;}"
+    "input[type=file]{margin-bottom:16px;}"
+    "button{background:#2196F3;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:16px;cursor:pointer;}"
+    "button:hover{background:#1976D2;}"
+    "#status{margin-top:20px;font-size:14px;color:#aaa;}"
+    "</style></head><body>"
+    "<h2>Firmware update</h2>"
+    "<p>Select the <code>firmware.bin</code> from <code>.pio/build/esp32dev/</code></p>"
+    "<form method='POST' enctype='multipart/form-data'>"
+    "<input type='file' name='firmware' accept='.bin' required><br>"
+    "<button type='submit'>Flash firmware</button>"
+    "</form>"
+    "<div id='status'></div>"
+    "<p style='margin-top:32px;font-size:12px;'><a href='/' style='color:#555;'>Back to settings</a></p>"
+    "</body></html>";
+  server.send(200, "text/html; charset=utf-8", page);
+}
+
 void setupWebServer() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/save", HTTP_POST, handleSave);
@@ -3384,6 +3573,27 @@ void setupWebServer() {
   server.on("/api/note/clear", HTTP_POST, handleApiNoteClear);
   // Status JSON API
   server.on("/api/status", HTTP_GET, handleApiStatus);
+
+  server.on("/update", HTTP_GET, handleOtaPage);
+  server.on("/update", HTTP_POST,
+    []() {
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/plain", Update.hasError() ? "Update failed" : "OK. Rebooting...");
+      delay(300);
+      ESP.restart();
+    },
+    []() {
+      HTTPUpload& upload = server.upload();
+      if (upload.status == UPLOAD_FILE_START) {
+        Update.begin(UPDATE_SIZE_UNKNOWN);
+      } else if (upload.status == UPLOAD_FILE_WRITE) {
+        Update.write(upload.buf, upload.currentSize);
+      } else if (upload.status == UPLOAD_FILE_END) {
+        Update.end(true);
+      }
+    }
+  );
+
   server.begin();
 }
 
@@ -3540,6 +3750,22 @@ void loop() {
       return;
     }
 
+    if (eyeBreakActive) {
+      eyeBreakActive = false;
+      cacheEyeBreak = "";
+      lastEyeBreakMs = millis();
+      pageDirty = true;
+      return;
+    }
+
+    if (moveActive) {
+      moveActive = false;
+      cacheMove = "";
+      lastMoveMs = millis();
+      pageDirty = true;
+      return;
+    }
+
     if (tx >= SCREEN_W - 36 && ty <= TOPBAR_H) {
       toggleSleepMode();
       pageDirty = true;
@@ -3568,14 +3794,38 @@ void loop() {
     checkMidnightHabitReset();
   }
 
-  if (pageDirty || lastDrawnPage != currentPage) {
+  // Reminder triggers
+  if (!eyeBreakActive && !moveActive && !timerDoneDialogOpen) {
+    if (eyeBreakEnabled && millis() - lastEyeBreakMs >= (unsigned long)eyeBreakIntervalMin * 60000UL) {
+      eyeBreakActive  = true;
+      eyeBreakStartMs = millis();
+      cacheEyeBreak   = "";
+      wakeDisplay(false);
+    } else if (moveEnabled && millis() - lastMoveMs >= (unsigned long)moveIntervalMin * 60000UL) {
+      moveActive = true;
+      cacheMove  = "";
+      wakeDisplay(false);
+    }
+  }
+
+  // Eye break auto-dismiss
+  if (eyeBreakActive && millis() - eyeBreakStartMs >= EYE_BREAK_DURATION_MS) {
+    eyeBreakActive = false;
+    cacheEyeBreak  = "";
+    lastEyeBreakMs = millis();
+    pageDirty = true;
+  }
+
+  if (eyeBreakActive) {
+    drawEyeBreakOverlay();
+  } else if (moveActive) {
+    drawMoveReminderOverlay();
+  } else if (pageDirty || lastDrawnPage != currentPage) {
     drawCurrentPageFull();
     updateCurrentPageDynamic();
     pageDirty = false;
     dataDirty = false;
-  }
-
-  if (millis() - lastClockTick >= CLOCK_TICK_MS) {
+  } else if (millis() - lastClockTick >= CLOCK_TICK_MS) {
     lastClockTick = millis();
     updateCurrentPageDynamic();
     dataDirty = false;

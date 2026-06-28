@@ -2,6 +2,7 @@
 """Deskbuddy Configurator — local build system & feature manager"""
 
 import os, json, subprocess, threading, queue, time
+import urllib.request, uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from pathlib import Path
@@ -215,6 +216,35 @@ class Handler(BaseHTTPRequestHandler):
             _run_pio(["run", "--target", "upload"])
             self.send_json(200, {"ok": True})
 
+        elif path == "/api/ota":
+            firmware = PROJECT_DIR / ".pio" / "build" / "esp32dev" / "firmware.bin"
+            if not firmware.exists():
+                self.send_json(400, {"error": "firmware.bin not found — build first"})
+                return
+            cfg = load_config()
+            device_ip = cfg.get("device_ip", "")
+            if not device_ip:
+                self.send_json(400, {"error": "No device IP configured"})
+                return
+            try:
+                boundary = uuid.uuid4().hex
+                data = firmware.read_bytes()
+                body = (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="firmware"; filename="firmware.bin"\r\n'
+                    f"Content-Type: application/octet-stream\r\n\r\n"
+                ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
+                req = urllib.request.Request(
+                    f"http://{device_ip}/update",
+                    data=body,
+                    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                    method="POST"
+                )
+                urllib.request.urlopen(req, timeout=60)
+                self.send_json(200, {"ok": True})
+            except Exception as e:
+                self.send_json(500, {"error": str(e)})
+
         else:
             self.send_json(404, {"error": "not found"})
 
@@ -334,6 +364,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .btn-build:hover{background:rgba(56,189,248,.1);}
 .btn-flash{background:var(--accent);color:#001018;}
 .btn-flash:hover{background:var(--accent2);}
+.btn-ota{background:#0d47a1;color:#e3f2fd;border:1px solid #1565c0;}
+.btn-ota:hover{background:#1565c0;}
 .btn:disabled{opacity:.4;cursor:not-allowed;}
 .terminal-toggle{background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;padding:4px 8px;border-radius:6px;}
 .terminal-toggle:hover{color:var(--text);}
@@ -495,11 +527,12 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 <!-- BUILD BAR -->
 <div class="build-bar">
   <div class="build-bar-top">
-    <div class="build-status" id="buildStatus"><strong>Ready</strong> — change WiFi/location then compile & flash, or open the Device UI for live settings</div>
+    <div class="build-status" id="buildStatus"><strong>Ready</strong> — change WiFi/location then compile &amp; flash, or open the Device UI for live settings</div>
     <button class="terminal-toggle" onclick="toggleTerminal()" id="termBtn">▲ Terminal</button>
     <button class="btn btn-save" onclick="saveConfig()">💾 Save config</button>
     <button class="btn btn-build" onclick="triggerBuild('build')" id="btnBuild">⚙ Compile</button>
-    <button class="btn btn-flash" onclick="triggerBuild('flash')" id="btnFlash">⚡ Compile & Flash</button>
+    <button class="btn btn-flash" onclick="triggerBuild('flash')" id="btnFlash">⚡ Compile &amp; Flash</button>
+    <button class="btn btn-ota" onclick="triggerOta()" id="btnOta" title="Push compiled firmware to device over WiFi">📡 Flash OTA</button>
   </div>
   <div class="terminal" id="terminal">
     <div class="terminal-inner" id="termOutput"></div>
@@ -680,9 +713,31 @@ function triggerBuild(mode) {
     });
 }
 
+function triggerOta() {
+  if (building) return;
+  const btn = document.getElementById('btnOta');
+  btn.disabled = true;
+  btn.innerHTML = '📡 Pushing…';
+  setStatus('running', 'Pushing firmware to device over WiFi…');
+  fetch('/api/ota', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false;
+      btn.innerHTML = '📡 Flash OTA';
+      if (d.ok) setStatus('ok', 'OTA flash complete — device is rebooting ✓');
+      else setStatus('err', 'OTA failed: ' + (d.error || 'unknown error'));
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.innerHTML = '📡 Flash OTA';
+      setStatus('err', 'OTA failed — is the device reachable?');
+    });
+}
+
 function setBuildUI(busy) {
   document.getElementById('btnBuild').disabled = busy;
   document.getElementById('btnFlash').disabled = busy;
+  document.getElementById('btnOta').disabled = busy;
   document.getElementById('btnBuild').innerHTML = busy ? `<span class="spin">⚙</span> Compiling…` : `⚙ Compile`;
   document.getElementById('btnFlash').innerHTML = busy ? `<span class="spin">⚡</span> Working…` : `⚡ Compile & Flash`;
 }
