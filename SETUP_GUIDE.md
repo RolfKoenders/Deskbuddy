@@ -1,203 +1,165 @@
 # Deskbuddy Setup Guide
 
-This guide explains how to install and upload the Deskbuddy software to a compatible ESP32 touchscreen board using **Arduino IDE**.
+This guide covers both methods of building and flashing Deskbuddy to your ESP32-2432S028.
 
+---
 
-## What You Need
+## What you need
 
-Before you begin, make sure you have:
+- [ESP32-2432S028 board](https://www.aliexpress.com/item/1005010525144441.html) (the "Cheap Yellow Display" / CYD)
+- USB-A to USB-micro data cable (not a charge-only cable)
+- Python 3.9+ (for the configurator)
+- [PlatformIO](https://platformio.org/) (CLI or VS Code extension)
 
-- A compatible ESP32 touchscreen board
-- A USB cable with data support
-- Arduino IDE installed
-- Access to a WiFi network
-- The Deskbuddy source code
+---
 
-## 1. Install ESP32 Board Support
+## 1. Clone the repo
 
-Deskbuddy is built for ESP32, so you first need to install the ESP32 board package in Arduino IDE.
+```bash
+git clone https://github.com/RolfKoenders/Deskbuddy.git
+cd Deskbuddy
+```
 
-1. Open **Arduino IDE**
-2. Go to **Tools > Board > Boards Manager**
-3. Search for `ESP32`
-4. Install **ESP32 by Espressif Systems**
+---
 
-After installation, select the board that best matches your hardware under:
+## 2. Create your secrets file
 
-**Tools > Board**
+Deskbuddy keeps WiFi credentials and your location out of version control.
 
-If you are unsure which profile to use, start with the closest ESP32 option and adjust if needed.
+```bash
+cp include/secrets.h.example include/secrets.h
+```
 
-## 2. Install Required Libraries
+Open `include/secrets.h` and fill in your values:
 
-Open:
+```cpp
+#define WIFI_SSID "your_wifi_name"
+#define WIFI_PASS "your_wifi_password"
 
-**Sketch > Include Library > Manage Libraries**
+#define DEFAULT_LAT      52.3676f   // your latitude
+#define DEFAULT_LNG       4.9041f   // your longitude
+#define DEFAULT_LOCATION "Amsterdam"
+```
 
-Install these libraries:
+You can find coordinates for your city on [Google Maps](https://maps.google.com): right-click any point and copy the coordinates.
 
+> **Note:** `secrets.h` is listed in `.gitignore` and will never be committed.
+
+---
+
+## 3. Flash: PlatformIO CLI
+
+This is the simplest method if you have PlatformIO installed.
+
+```bash
+# Build only
+pio run
+
+# Build and flash
+pio run --target upload
+
+# Open serial monitor (shows IP address on first boot)
+pio device monitor
+```
+
+---
+
+## 4. Flash: Configurator {#configurator}
+
+The configurator is a local Python web app that lets you manage WiFi credentials, location, optional feature flags, and trigger builds and flashing, all from your browser.
+
+```bash
+python3 configurator.py
+```
+
+Then open [http://localhost:8765](http://localhost:8765) in your browser.
+
+From there you can:
+
+- Set WiFi SSID and password (written to `secrets.h`, never committed)
+- Set your location (city name, latitude, longitude)
+- Enable optional feature modules (Home Assistant, habit tracker, etc.)
+- Click **Build** to compile, or **Build & Flash** to compile and upload
+
+The configurator calls `pio run --target upload` under the hood, so PlatformIO must be installed and your board must be connected by USB.
+
+---
+
+## 5. First boot
+
+After a successful flash:
+
+1. The display turns on and shows a splash/sync screen
+2. The device connects to WiFi and syncs time via NTP
+3. Weather data is fetched from [Open-Meteo](https://open-meteo.com/) (free, no API key needed)
+4. The home screen appears
+
+The device's local IP address is shown on the **Status page** (swipe or tap the nav bar). You can also see it in the serial monitor output.
+
+---
+
+## 6. Device web UI
+
+Open `http://<device-ip>` in any browser on the same network. From here you can change:
+
+| Setting | Where |
+|---------|-------|
+| Background theme | Appearance section |
+| Accent and text color | Appearance section |
+| Home widget layout | Widget customization |
+| Location (name, lat, lng) | Location section |
+| Timezone | Location section |
+| Units (metric / imperial) | Location section |
+| Focus timer presets | Timer section |
+| Nickname | General section |
+| Sleep / dim behavior | Display section |
+| Home Assistant config | HA section |
+
+All settings are saved to the device's non-volatile storage (NVS) and survive reboots. No reflashing is needed.
+
+---
+
+## 7. Optional: Arduino IDE (single-file version)
+
+If you prefer Arduino IDE over PlatformIO, use `desk_buddy_github.cpp`. Rename it to a `.ino` file, install the required libraries, and configure `User_Setup.h` for TFT_eSPI.
+
+Required libraries (via Library Manager):
 - `TFT_eSPI`
 - `ArduinoJson`
 - `XPT2046_Touchscreen`
 
-The following are normally included automatically with the ESP32 board package:
+> Note: The Arduino IDE version is a standalone snapshot. It does not include all features from the main PlatformIO build.
 
-- `WiFi`
-- `HTTPClient`
-- `WiFiClientSecure`
-- `WebServer`
-- `Preferences`
-- `SPI`
+---
 
-## 3. Configure TFT_eSPI
+## Troubleshooting
 
-This is the most important step for getting the display to work correctly.
+### Display is black or white after flashing
 
-Deskbuddy uses the **TFT_eSPI** library, and you will most likely need to replace or edit the `User_Setup` file inside the TFT_eSPI library folder so it matches your display.
-
-If the TFT_eSPI setup is wrong, you may see problems like:
-
-- A black or white screen
-- Wrong colors
-- Incorrect rotation
-- No visible output
-- Touch and display not matching properly
-
-### What to do
-
-Find the TFT_eSPI library folder on your computer and locate:
-
-`User_Setup.h`
-
-Then either:
-
-- Replace it with a working setup for your display
-- Or edit the driver and pin settings manually
-
-If you are using a specific ESP32 touchscreen board variant, it is a good idea to keep a backup of your working `User_Setup.h`.
-
-## 4. Open the Deskbuddy Code
-
-Open the Deskbuddy project in Arduino IDE.
-
-For the public version, use:
-
-- [desk_buddy_github.cpp]
-
-If you rename the file or convert it to an `.ino`, that is also fine as long as the project builds correctly in Arduino IDE.
-
-## 5. Add Your WiFi Credentials
-
-Before uploading, update the WiFi values in the code:
-
-```cpp
-const char* WIFI_SSID = "YOUR_WIFI_SSID";
-const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
-```
-
-Replace those placeholders with your own WiFi network name and password.
-
-## 6. Select the Correct Board and Port
-
-In Arduino IDE:
-
-- Select the correct **ESP32 board**
-- Select the correct **COM port**
-
-You can find the port under:
-
-**Tools > Port**
-
-If no port appears:
-
-- Reconnect the board
-- Try another USB cable
-- Make sure the cable supports data, not only charging
-
-## 7. Upload the Code
-
-Once everything is configured:
-
-1. Connect the ESP32 board by USB
-2. Click **Upload**
-3. Wait for the sketch to compile and flash
-
-On some ESP32 boards, you may need to hold the **BOOT** button during upload if flashing does not start automatically.
-
-## 8. First Boot
-
-After a successful upload, the device should:
-
-- Power on the display
-- Connect to WiFi
-- Sync time
-- Fetch weather data
-- Start the local web interface
-
-You can also open the Serial Monitor to check boot messages:
-
-**Tools > Serial Monitor**
-
-In many cases, the local IP address will be printed there after WiFi connection succeeds.
-
-## 9. Open the Web Interface
-
-Once the ESP32 is connected to your network, open its local IP address in your browser.
-
-From the browser interface, you can adjust things like:
-
-- Accent colors and theme
-- Text colors
-- Regional time and date format
-- Timer presets
-- Weather location
-- Notes
-- Nickname
-- Alert behavior
-
-This makes it easy to personalize the device without editing the code every time.
-
-## 10. Troubleshooting
-
-### The display stays black or white
-
-- Check the TFT_eSPI `User_Setup.h`
-- Confirm the correct display driver is selected
-- Verify that the board is receiving power
-
-### The display works, but colors or rotation are wrong
-
-- Check the TFT_eSPI configuration
-- Verify display driver and pin mapping
-- Confirm rotation settings in the code
-
-### Touch does not work correctly
-
-- Check touch wiring and controller support
-- Verify rotation and calibration values
+This should not happen with the PlatformIO build. `LGFX_config.hpp` is preconfigured for the ESP32-2432S028. If you modified the display config, double-check the panel and bus settings.
 
 ### Upload fails
 
-- Make sure the correct COM port is selected
-- Try another USB cable
-- Hold the **BOOT** button during upload if needed
+- Make sure the board is connected over USB (not a charge-only cable)
+- Try holding the **BOOT** button on the board while the upload starts
+- Check that the correct port is selected: `pio device list`
 
 ### WiFi does not connect
 
-- Double-check SSID and password
-- Make sure the network is in range
-- Check the Serial Monitor for connection messages
+- Check your SSID and password in `secrets.h`
+- Make sure the network is 2.4 GHz (the ESP32 does not support 5 GHz)
+- Rebuild and reflash after editing `secrets.h`
 
-### Time or weather does not update
+### Time or weather is wrong
 
-- Confirm WiFi is connected
-- Check that the location values are valid
-- Verify that API requests are not being blocked
+- The correct timezone is set via the device web UI (not hardcoded)
+- Weather uses the latitude/longitude from the web UI, update them if you moved or changed your defaults
+- Make sure the device has internet access (not blocked by a firewall or guest network)
 
-## Final Notes
+### Touch position is offset
 
-Deskbuddy is designed to be easy to customize, but exact setup details may vary depending on your ESP32 touchscreen board version.
+- Do not change `ts.setRotation(2)` in the source. This value is calibrated for the ESP32-2432S028 and must stay at 2
 
-For most users, the **TFT_eSPI `User_Setup.h` configuration is the most important part** of the installation.
+### I changed `secrets.h` but the device still uses old values
 
-Once that is correct, the rest of the setup is usually straightforward.
+`secrets.h` is compiled into the firmware. Any change to it requires a rebuild and reflash (`pio run --target upload`). Runtime settings (theme, location, etc.) changed via the web UI are saved immediately to NVS without reflashing.

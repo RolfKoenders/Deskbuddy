@@ -11,7 +11,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <TFT_eSPI.h>
+#include "LGFX_config.hpp"
+#include "secrets.h"
 #include <time.h>
 #include <ArduinoJson.h>
 #include <WebServer.h>
@@ -21,17 +22,11 @@
 #include <math.h>
 
 // =========================================================
-// WIFI
-// =========================================================
-const char* WIFI_SSID = "YOUR_WIFI_SSID";       // Replace with your WiFi network name
-const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";   // Replace with your WiFi password
-
-// =========================================================
 // DISPLAY / TOUCH
 // =========================================================
-TFT_eSPI tft;
+LGFX tft;
 
-const int ROT = 2;
+const int ROT = 0;  // offset_rotation=2 in LGFX_config handles the physical flip
 const bool INV = false;
 
 #define TOUCH_CS  33
@@ -62,31 +57,31 @@ Preferences prefs;
 // =========================================================
 // SPRITES
 // =========================================================
-TFT_eSprite sprClock = TFT_eSprite(&tft);
-TFT_eSprite sprSmall = TFT_eSprite(&tft);
+LGFX_Sprite sprClock(&tft);
+LGFX_Sprite sprSmall(&tft);
 
 // =========================================================
 // LOCATION
 // =========================================================
-float LAT = 52.3676f;
-float LNG = 4.9041f;
-String locationName = "Amsterdam";
+float LAT = DEFAULT_LAT;
+float LNG = DEFAULT_LNG;
+String locationName = DEFAULT_LOCATION;
 
 // =========================================================
 // THEME
 // =========================================================
-uint16_t COL_BG        = 0x08A3;
-uint16_t COL_PANEL     = 0x1106;
-uint16_t COL_PANEL_ALT = 0x18C7;
-uint16_t COL_STROKE    = 0x31EC;
-uint16_t COL_TEXT      = 0xEF7D;
-uint16_t COL_DIM       = 0x94B2;
-uint16_t COL_ACCENT    = 0x5EFA;
+uint16_t COL_BG        = 0xE75E;
+uint16_t COL_PANEL     = 0xCEFD;
+uint16_t COL_PANEL_ALT = 0xC73C;
+uint16_t COL_STROKE    = 0x9E19;
+uint16_t COL_TEXT      = 0x1082;
+uint16_t COL_DIM       = 0x6B4D;
+uint16_t COL_ACCENT    = 0x2914;
 
-const uint16_t COL_GREEN  = TFT_GREEN;
-const uint16_t COL_YELLOW = 0xFFE0;
-const uint16_t COL_RED    = TFT_RED;
-const uint16_t COL_BLUE   = 0x041F;
+const uint16_t COL_GREEN  = 0xF81F;
+const uint16_t COL_YELLOW = 0xF800;
+const uint16_t COL_RED    = 0xFFE0;
+const uint16_t COL_BLUE   = 0x03FF;
 
 String textColorKey = "standard";
 String unitKey = "metric"; // metric = C/mm, imperial = F/in
@@ -122,6 +117,8 @@ const int PAGE_ROW2_Y = 120;
 const int PAGE_ROW3_Y = 198;
 const int PAGE_WIDGET_H = HOME_WIDGET_H;
 
+const uint32_t NTP_MIN_EPOCH = 1700000000UL;
+
 // =========================================================
 // NOTES
 // =========================================================
@@ -137,7 +134,13 @@ enum HomeWidgetType {
   HOME_WIDGET_KP,
   HOME_WIDGET_UV,
   HOME_WIDGET_WIND,
-  HOME_WIDGET_SUN
+  HOME_WIDGET_SUN,
+  HOME_WIDGET_HYDRATION,
+  HOME_WIDGET_HABITS,
+  HOME_WIDGET_HA1,
+  HOME_WIDGET_HA2,
+  HOME_WIDGET_HA3,
+  HOME_WIDGET_HA4
 };
 
 const int HOME_SLOT_COUNT = 4;
@@ -157,8 +160,15 @@ enum Page {
   PAGE_HOME = 0,
   PAGE_WEATHER = 1,
   PAGE_NOTES = 2,
-  PAGE_STATUS = 3
+  PAGE_STATUS = 3,
+  PAGE_HABITS = 4,
+  PAGE_HA = 5
 };
+
+// Nav order and labels (5 primary tabs — Status accessible via web UI)
+const int NAV_COUNT = 5;
+const Page NAV_PAGES[NAV_COUNT] = {PAGE_HOME, PAGE_HABITS, PAGE_HA, PAGE_WEATHER, PAGE_NOTES};
+const char* NAV_NAMES[NAV_COUNT] = {"Home", "Habits", "HA", "Wthr", "Notes"};
 
 Page currentPage = PAGE_HOME;
 Page lastDrawnPage = (Page)-1;
@@ -176,9 +186,6 @@ bool dataDirty = true;
 String cacheClock = "";
 String cacheTemp = "";
 String cacheRain = "";
-String cacheWeek = "";
-String cacheHomeEmpty1 = "";
-String cacheHomeEmpty2 = "";
 String cacheFocusTimer = "";
 String cacheTimerMenu = "";
 String cacheTimerDone = "";
@@ -204,41 +211,59 @@ String lastNetworkToggleText = "";
 
 const char* homeWidgetKey(HomeWidgetType type) {
   switch (type) {
-    case HOME_WIDGET_WEEK:    return "week";
-    case HOME_WIDGET_TIMER:   return "timer";
-    case HOME_WIDGET_RAIN:    return "rain";
-    case HOME_WIDGET_OUTDOOR: return "outdoor";
-    case HOME_WIDGET_KP:      return "kp";
-    case HOME_WIDGET_UV:      return "uv";
-    case HOME_WIDGET_WIND:    return "wind";
-    case HOME_WIDGET_SUN:     return "sun";
-    default:                  return "week";
+    case HOME_WIDGET_WEEK:       return "week";
+    case HOME_WIDGET_TIMER:      return "timer";
+    case HOME_WIDGET_RAIN:       return "rain";
+    case HOME_WIDGET_OUTDOOR:    return "outdoor";
+    case HOME_WIDGET_KP:         return "kp";
+    case HOME_WIDGET_UV:         return "uv";
+    case HOME_WIDGET_WIND:       return "wind";
+    case HOME_WIDGET_SUN:        return "sun";
+    case HOME_WIDGET_HYDRATION:  return "hydration";
+    case HOME_WIDGET_HABITS:     return "habits";
+    case HOME_WIDGET_HA1:        return "ha1";
+    case HOME_WIDGET_HA2:        return "ha2";
+    case HOME_WIDGET_HA3:        return "ha3";
+    case HOME_WIDGET_HA4:        return "ha4";
+    default:                     return "week";
   }
 }
 
 const char* homeWidgetLabel(HomeWidgetType type) {
   switch (type) {
-    case HOME_WIDGET_WEEK:    return "Week";
-    case HOME_WIDGET_TIMER:   return "Timer";
-    case HOME_WIDGET_RAIN:    return "Rain";
-    case HOME_WIDGET_OUTDOOR: return "Outdoor";
-    case HOME_WIDGET_KP:      return "KP index";
-    case HOME_WIDGET_UV:      return "UV index";
-    case HOME_WIDGET_WIND:    return "Wind";
-    case HOME_WIDGET_SUN:     return "Sun event";
-    default:                  return "Week";
+    case HOME_WIDGET_WEEK:       return "Week";
+    case HOME_WIDGET_TIMER:      return "Timer";
+    case HOME_WIDGET_RAIN:       return "Rain";
+    case HOME_WIDGET_OUTDOOR:    return "Outdoor";
+    case HOME_WIDGET_KP:         return "KP index";
+    case HOME_WIDGET_UV:         return "UV index";
+    case HOME_WIDGET_WIND:       return "Wind";
+    case HOME_WIDGET_SUN:        return "Sun event";
+    case HOME_WIDGET_HYDRATION:  return "Hydration";
+    case HOME_WIDGET_HABITS:     return "Habits";
+    case HOME_WIDGET_HA1:        return "HA Sensor 1";
+    case HOME_WIDGET_HA2:        return "HA Sensor 2";
+    case HOME_WIDGET_HA3:        return "HA Sensor 3";
+    case HOME_WIDGET_HA4:        return "HA Sensor 4";
+    default:                     return "Week";
   }
 }
 
 HomeWidgetType homeWidgetFromKey(const String& key) {
-  if (key == "week") return HOME_WIDGET_WEEK;
-  if (key == "timer") return HOME_WIDGET_TIMER;
-  if (key == "rain") return HOME_WIDGET_RAIN;
-  if (key == "outdoor") return HOME_WIDGET_OUTDOOR;
-  if (key == "kp") return HOME_WIDGET_KP;
-  if (key == "uv") return HOME_WIDGET_UV;
-  if (key == "wind") return HOME_WIDGET_WIND;
-  if (key == "sun") return HOME_WIDGET_SUN;
+  if (key == "week")       return HOME_WIDGET_WEEK;
+  if (key == "timer")      return HOME_WIDGET_TIMER;
+  if (key == "rain")       return HOME_WIDGET_RAIN;
+  if (key == "outdoor")    return HOME_WIDGET_OUTDOOR;
+  if (key == "kp")         return HOME_WIDGET_KP;
+  if (key == "uv")         return HOME_WIDGET_UV;
+  if (key == "wind")       return HOME_WIDGET_WIND;
+  if (key == "sun")        return HOME_WIDGET_SUN;
+  if (key == "hydration")  return HOME_WIDGET_HYDRATION;
+  if (key == "habits")     return HOME_WIDGET_HABITS;
+  if (key == "ha1")        return HOME_WIDGET_HA1;
+  if (key == "ha2")        return HOME_WIDGET_HA2;
+  if (key == "ha3")        return HOME_WIDGET_HA3;
+  if (key == "ha4")        return HOME_WIDGET_HA4;
   return HOME_WIDGET_WEEK;
 }
 
@@ -449,6 +474,67 @@ static int lastSunYmd = -1;
 static time_t lastSyncTime = 0;
 
 // =========================================================
+// HABIT TRACKER
+// =========================================================
+const int HABIT_COUNT = 6;
+String habitName[HABIT_COUNT]   = {"Habit 1","Habit 2","Habit 3","Habit 4","Habit 5","Habit 6"};
+bool   habitDone[HABIT_COUNT]   = {};
+int    habitStreak[HABIT_COUNT] = {};
+String habitLastDate            = "";  // "YYYYMMDD" of last midnight reset
+bool   habitsEnabled[HABIT_COUNT] = {false,false,false,false,false,false};
+bool   ambientColorEnabled      = false;
+String cacheHabitPage           = "";
+
+static int habitsActiveCount() {
+  int c = 0;
+  for (int i = 0; i < HABIT_COUNT; i++) if (habitsEnabled[i]) c++;
+  return c;
+}
+static int habitsDoneCount() {
+  int c = 0;
+  for (int i = 0; i < HABIT_COUNT; i++) if (habitsEnabled[i] && habitDone[i]) c++;
+  return c;
+}
+
+// =========================================================
+// HYDRATION TRACKER
+// =========================================================
+int    hydrationCount   = 0;
+const int HYDRATION_GOAL = 8;
+String hydrationDate    = "";  // "YYYYMMDD"
+String cacheHydration   = "";
+
+// =========================================================
+// STICKY NOTES API
+// =========================================================
+const int STICKY_COUNT = 3;
+String stickyNote[STICKY_COUNT] = {"","",""};
+bool   stickyDirty = false;
+
+// =========================================================
+// HOME ASSISTANT
+// =========================================================
+String haUrl   = "";
+String haToken = "";
+
+const int HA_SENSOR_COUNT = 4;
+String haSensorEntity[HA_SENSOR_COUNT] = {"","","",""};
+String haSensorLabel[HA_SENSOR_COUNT]  = {"Sensor 1","Sensor 2","Sensor 3","Sensor 4"};
+String haSensorValue[HA_SENSOR_COUNT]  = {"--","--","--","--"};
+String haSensorUnit[HA_SENSOR_COUNT]   = {"","","",""};
+
+const int HA_CTRL_COUNT = 4;
+String haCtrlEntity[HA_CTRL_COUNT] = {"","","",""};
+String haCtrlLabel[HA_CTRL_COUNT]  = {"Control 1","Control 2","Control 3","Control 4"};
+String haCtrlType[HA_CTRL_COUNT]   = {"switch","switch","scene","scene"};
+bool   haCtrlState[HA_CTRL_COUNT]  = {};
+
+int    haPageTab    = 0;  // 0=sensors 1=controls
+time_t lastHaFetch  = 0;
+const uint32_t HA_INTERVAL_SEC = 30;
+String cacheHaPage  = "";
+
+// =========================================================
 // SLEEP / BACKLIGHT
 // =========================================================
 const int BACKLIGHT_PIN = 21;
@@ -469,8 +555,13 @@ const int FLASH_BL_LOW = 20;
 const int FLASH_BL_HIGH = 255;
 
 void wakeDisplay(bool clearManualMode = true);
-
+void setBacklight(int value);
+void setWifiEnabled(bool enabled);
 int sanitizeTimerMinutes(int value);
+void drawHydrationWidget(int x, int y, int w, int h, String& cache, bool force);
+void drawHabitsWidget(int x, int y, int w, int h, String& cache, bool force);
+void handleApiNote();
+void handleApiNoteClear();
 
 // =========================================================
 // HELPERS
@@ -524,7 +615,7 @@ static String formatClockParts(const struct tm& tmValue, bool withSeconds) {
 
 static String formatDateParts(const struct tm& tmValue) {
   char buf[32];
-  strftime(buf, sizeof(buf), useUsRegionFormat() ? "%a %m/%d/%Y" : "%a %d.%m.%Y", &tmValue);
+  strftime(buf, sizeof(buf), useUsRegionFormat() ? "%m/%d/%Y" : "%d.%m.%Y", &tmValue);
   return String(buf);
 }
 
@@ -854,7 +945,7 @@ void updateTimerDoneDialogState() {
 
 void setBacklight(int value) {
   value = constrain(value, 0, 255);
-  analogWrite(BACKLIGHT_PIN, value);
+  tft.setBrightness(value);
 }
 
 void wakeDisplay(bool clearManualMode) {
@@ -914,42 +1005,42 @@ void handleAutoSleep() {
 // THEME / SETTINGS
 // =========================================================
 void applyThemeByKey(const String& accentKey, const String& bgKey) {
-  if (accentKey == "standard")    COL_ACCENT = 0xEF7D;
-  else if (accentKey == "cyan")   COL_ACCENT = 0x5EFA;
-  else if (accentKey == "ice")    COL_ACCENT = 0xEFFF;
-  else if (accentKey == "white")  COL_ACCENT = TFT_WHITE;
-  else if (accentKey == "mint")   COL_ACCENT = 0x07F0;
-  else if (accentKey == "green")  COL_ACCENT = TFT_GREEN;
-  else if (accentKey == "blue")   COL_ACCENT = 0x3D9F;
-  else if (accentKey == "purple") COL_ACCENT = 0xA2F5;
-  else if (accentKey == "pink")   COL_ACCENT = 0xF97F;
-  else if (accentKey == "orange") COL_ACCENT = 0xFD20;
-  else if (accentKey == "amber")  COL_ACCENT = 0xFEA0;
-  else if (accentKey == "red")    COL_ACCENT = TFT_RED;
-  else                            COL_ACCENT = 0x5EFA;
+  if (accentKey == "standard")    COL_ACCENT = 0x1082;
+  else if (accentKey == "cyan")   COL_ACCENT = 0x2914;
+  else if (accentKey == "ice")    COL_ACCENT = 0x0002;
+  else if (accentKey == "white")  COL_ACCENT = TFT_BLACK;
+  else if (accentKey == "mint")   COL_ACCENT = 0x781F;
+  else if (accentKey == "green")  COL_ACCENT = 0xF81F;
+  else if (accentKey == "blue")   COL_ACCENT = 0x0278;
+  else if (accentKey == "purple") COL_ACCENT = 0x550B;
+  else if (accentKey == "pink")   COL_ACCENT = 0x0680;
+  else if (accentKey == "orange") COL_ACCENT = 0xFAC0;
+  else if (accentKey == "amber")  COL_ACCENT = 0xF940;
+  else if (accentKey == "red")    COL_ACCENT = 0xFFE0;
+  else                            COL_ACCENT = 0x2914;
 
   if (bgKey == "slate") {
-    COL_BG = 0x08A3; COL_PANEL = 0x1106; COL_PANEL_ALT = 0x18C7; COL_STROKE = 0x31EC;
+    COL_BG = 0xE75E; COL_PANEL = 0xCEFD; COL_PANEL_ALT = 0xC73C; COL_STROKE = 0x9E19;
   } else if (bgKey == "deep") {
-    COL_BG = 0x0000; COL_PANEL = 0x0841; COL_PANEL_ALT = 0x1082; COL_STROKE = 0x2945;
+    COL_BG = 0xFFFF; COL_PANEL = 0xF7BE; COL_PANEL_ALT = 0xEF7D; COL_STROKE = 0xD6BA;
   } else if (bgKey == "nordic") {
-    COL_BG = 0x0864; COL_PANEL = 0x10C6; COL_PANEL_ALT = 0x1908; COL_STROKE = 0x3A2D;
+    COL_BG = 0xDF9E; COL_PANEL = 0xCF3D; COL_PANEL_ALT = 0xBEFC; COL_STROKE = 0x95D8;
   } else if (bgKey == "forest") {
-    COL_BG = 0x0208; COL_PANEL = 0x0ACB; COL_PANEL_ALT = 0x134D; COL_STROKE = 0x2D72;
+    COL_BG = 0xBDFF; COL_PANEL = 0xA53E; COL_PANEL_ALT = 0x94BD; COL_STROKE = 0x6A9A;
   } else if (bgKey == "coffee") {
-    COL_BG = 0x18A3; COL_PANEL = 0x2945; COL_PANEL_ALT = 0x39C7; COL_STROKE = 0x5A89;
+    COL_BG = 0xE75C; COL_PANEL = 0xD6BA; COL_PANEL_ALT = 0xC638; COL_STROKE = 0xB574;
   } else if (bgKey == "soft") {
-    COL_BG = 0x10A2; COL_PANEL = 0x1924; COL_PANEL_ALT = 0x2145; COL_STROKE = 0x3A49;
+    COL_BG = 0xEF5D; COL_PANEL = 0xDEDC; COL_PANEL_ALT = 0xD6BB; COL_STROKE = 0xB5B8;
   } else if (bgKey == "midnight") {
-    COL_BG = 0x0008; COL_PANEL = 0x0011; COL_PANEL_ALT = 0x0018; COL_STROKE = 0x3A7F;
+    COL_BG = 0xBFFF; COL_PANEL = 0x77FF; COL_PANEL_ALT = 0x3FFF; COL_STROKE = 0x0598;
   } else if (bgKey == "graphite") {
-    COL_BG = 0x1082; COL_PANEL = 0x18C3; COL_PANEL_ALT = 0x2104; COL_STROKE = 0x4208;
+    COL_BG = 0xEF7D; COL_PANEL = 0xE73C; COL_PANEL_ALT = 0xDEFB; COL_STROKE = 0xBDF7;
   } else if (bgKey == "garnet") {
-    COL_BG = 0x1004; COL_PANEL = 0x1886; COL_PANEL_ALT = 0x20E8; COL_STROKE = 0x41AC;
+    COL_BG = 0xDFFD; COL_PANEL = 0xCF7C; COL_PANEL_ALT = 0xBF1B; COL_STROKE = 0x9E57;
   } else if (bgKey == "ochre") {
-    COL_BG = 0x20E1; COL_PANEL = 0x3184; COL_PANEL_ALT = 0x4226; COL_STROKE = 0x632B;
+    COL_BG = 0xF71B; COL_PANEL = 0xDE79; COL_PANEL_ALT = 0xCDD7; COL_STROKE = 0xA4D3;
   } else {
-    COL_BG = 0x08A3; COL_PANEL = 0x1106; COL_PANEL_ALT = 0x18C7; COL_STROKE = 0x31EC;
+    COL_BG = 0xE75E; COL_PANEL = 0xCEFD; COL_PANEL_ALT = 0xC73C; COL_STROKE = 0x9E19;
   }
 }
 
@@ -957,32 +1048,32 @@ void applyTextColorByKey(const String& key) {
   textColorKey = key;
 
   if (key == "standard") {
-    COL_TEXT = 0xEF7D; COL_DIM  = 0x94B2;
+    COL_TEXT = 0x1082; COL_DIM  = 0x6B4D;
   } else if (key == "white") {
-    COL_TEXT = TFT_WHITE; COL_DIM = 0xBDF7;
+    COL_TEXT = TFT_BLACK; COL_DIM = 0x4208;
   } else if (key == "ice") {
-    COL_TEXT = 0xEFFF; COL_DIM = 0x9D7F;
+    COL_TEXT = 0x0002; COL_DIM = 0x028C;
   } else if (key == "mint") {
-    COL_TEXT = 0x07F0; COL_DIM = 0x05EC;
+    COL_TEXT = 0x781F; COL_DIM = 0x9A1F;
   } else if (key == "orange") {
-    COL_TEXT = 0xFD20; COL_DIM = 0xBA26;
+    COL_TEXT = 0xFAC0; COL_DIM = 0xCDC8;
   } else if (key == "amber") {
-    COL_TEXT = 0xFEA0; COL_DIM = 0xBCE0;
+    COL_TEXT = 0xF940; COL_DIM = 0xFB08;
   } else if (key == "green") {
-    COL_TEXT = TFT_GREEN; COL_DIM = 0x86E8;
+    COL_TEXT = 0xF81F; COL_DIM = 0xB90F;
   } else if (key == "cyan") {
-    COL_TEXT = 0x5EFA; COL_DIM = 0x3D96;
+    COL_TEXT = 0x2914; COL_DIM = 0x4A78;
   } else if (key == "blue") {
-    COL_TEXT = 0x3D9F; COL_DIM = 0x22B1;
+    COL_TEXT = 0x0278; COL_DIM = 0x755B;
   } else if (key == "purple") {
-    COL_TEXT = 0xA2F5; COL_DIM = 0x79ED;
+    COL_TEXT = 0x550B; COL_DIM = 0x9610;
   } else if (key == "red") {
-    COL_TEXT = TFT_RED; COL_DIM = 0xB9E7;
+    COL_TEXT = 0xFFE0; COL_DIM = 0xC608;
   } else if (key == "pink") {
-    COL_TEXT = 0xF97F; COL_DIM = 0xC2F1;
+    COL_TEXT = 0x0680; COL_DIM = 0x7507;
   } else {
-    COL_TEXT = 0xEF7D;
-    COL_DIM  = 0x94B2;
+    COL_TEXT = 0x1082;
+    COL_DIM  = 0x6B4D;
     textColorKey = "standard";
   }
 }
@@ -996,9 +1087,9 @@ void loadStoredSettings() {
 
   notesText        = prefs.getString("notes", "No notes yet.");
   buddyNickname    = prefs.getString("nickname", "");
-  locationName     = prefs.getString("locname", "Amsterdam");
-  LAT              = prefs.getFloat("lat", 52.3676f);
-  LNG              = prefs.getFloat("lng", 4.9041f);
+  locationName     = prefs.getString("locname", DEFAULT_LOCATION);
+  LAT              = prefs.getFloat("lat", DEFAULT_LAT);
+  LNG              = prefs.getFloat("lng", DEFAULT_LNG);
   sleepIntervalMin = prefs.getInt("sleepMin", 10);
   unitKey          = prefs.getString("units", "metric");
   regionFormatKey  = prefs.getString("region", "europe");
@@ -1022,6 +1113,40 @@ void loadStoredSettings() {
   applyThemeByKey(accent, bg);
   applyTextColorByKey(txt);
   applyDeviceTimezoneByKey(timezoneKey);
+
+  // Habits
+  for (int i = 0; i < HABIT_COUNT; i++) {
+    String k = "hab" + String(i);
+    habitName[i]     = prefs.getString((k + "n").c_str(), habitName[i]);
+    habitStreak[i]   = prefs.getInt((k + "s").c_str(), 0);
+    habitsEnabled[i] = prefs.getBool((k + "e").c_str(), false);
+    habitDone[i]     = false;  // always reset done state on boot
+  }
+  habitLastDate      = prefs.getString("habDate", "");
+  ambientColorEnabled = prefs.getBool("ambColor", false);
+
+  // Hydration
+  hydrationCount = prefs.getInt("hydCount", 0);
+  hydrationDate  = prefs.getString("hydDate", "");
+
+  // Sticky notes
+  for (int i = 0; i < STICKY_COUNT; i++) {
+    stickyNote[i] = prefs.getString(("sticky" + String(i)).c_str(), "");
+  }
+
+  // Home Assistant
+  haUrl   = prefs.getString("haUrl", "");
+  haToken = prefs.getString("haToken", "");
+  for (int i = 0; i < HA_SENSOR_COUNT; i++) {
+    haSensorEntity[i] = prefs.getString(("haSe" + String(i)).c_str(), "");
+    haSensorLabel[i]  = prefs.getString(("haSl" + String(i)).c_str(), "Sensor " + String(i+1));
+    haSensorUnit[i]   = prefs.getString(("haSu" + String(i)).c_str(), "");
+  }
+  for (int i = 0; i < HA_CTRL_COUNT; i++) {
+    haCtrlEntity[i] = prefs.getString(("haCe" + String(i)).c_str(), "");
+    haCtrlLabel[i]  = prefs.getString(("haCl" + String(i)).c_str(), "Control " + String(i+1));
+    haCtrlType[i]   = prefs.getString(("haCt" + String(i)).c_str(), "switch");
+  }
 }
 
 void resetDataCaches() {
@@ -1110,7 +1235,7 @@ bool fetchSunriseSunset() {
   String body = http.getString();
   http.end();
 
-  StaticJsonDocument<1024> doc;
+  JsonDocument doc;
   if (deserializeJson(doc, body)) return false;
 
   const char* sunriseStr = doc["results"]["sunrise"];
@@ -1189,7 +1314,7 @@ bool fetchWeather() {
   String body = http.getString();
   http.end();
 
-  StaticJsonDocument<4096> doc;
+  JsonDocument doc;
   if (deserializeJson(doc, body)) return false;
 
   tempC = doc["current"]["temperature_2m"] | NAN;
@@ -1305,21 +1430,31 @@ void drawTopBar(const String& title) {
   tft.drawString(title, 10, 9, 2);
 
   const int bs = 25;
-  const int bx = SCREEN_W - bs - 6;
   const int by = 4;
 
-  uint16_t bg = (sleepDimmed || sleepOff) ? COL_ACCENT : COL_PANEL;
-  uint16_t fg = (sleepDimmed || sleepOff) ? TFT_BLACK : COL_TEXT;
-
-  tft.fillRoundRect(bx, by, bs, bs, 7, bg);
+  // Power button (rightmost)
+  const int bx = SCREEN_W - bs - 6;
+  uint16_t pwrBg = (sleepDimmed || sleepOff) ? COL_ACCENT : COL_PANEL;
+  uint16_t pwrFg = (sleepDimmed || sleepOff) ? TFT_BLACK : COL_TEXT;
+  tft.fillRoundRect(bx, by, bs, bs, 7, pwrBg);
   tft.drawRoundRect(bx, by, bs, bs, 7, COL_ACCENT);
-
   const int cx = bx + 12;
   const int cy = by + 12;
+  tft.drawCircle(cx, cy + 1, 6, pwrFg);
+  tft.drawFastHLine(cx - 4, cy - 5, 9, pwrBg);
+  tft.drawFastVLine(cx, cy - 7, 6, pwrFg);
 
-  tft.drawCircle(cx, cy + 1, 6, fg);
-  tft.drawFastHLine(cx - 4, cy - 5, 9, bg);
-  tft.drawFastVLine(cx, cy - 7, 6, fg);
+  // Info / Status button (left of power button)
+  const int ix = bx - bs - 4;
+  bool onStatus = (currentPage == PAGE_STATUS);
+  uint16_t infoBg = onStatus ? COL_ACCENT : COL_PANEL;
+  uint16_t infoFg = onStatus ? TFT_BLACK : COL_TEXT;
+  tft.fillRoundRect(ix, by, bs, bs, 7, infoBg);
+  tft.drawRoundRect(ix, by, bs, bs, 7, COL_ACCENT);
+  const int icx = ix + 12;
+  const int icy = by + 12;
+  tft.fillCircle(icx, icy - 5, 2, infoFg);
+  tft.fillRect(icx - 1, icy - 1, 3, 9, infoFg);
 }
 
 void drawNavBar() {
@@ -1327,22 +1462,21 @@ void drawNavBar() {
   tft.fillRect(0, y, SCREEN_W, NAV_H, COL_PANEL_ALT);
   tft.drawFastHLine(0, y, SCREEN_W, COL_STROKE);
 
-  const int btnW = SCREEN_W / 4;
-  const char* names[4] = {"Home", "Weather", "Notes", "Status"};
+  const int btnW = SCREEN_W / NAV_COUNT;
 
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < NAV_COUNT; i++) {
     int bx = i * btnW;
-    bool active = ((int)currentPage == i);
+    bool active = (currentPage == NAV_PAGES[i]);
 
     uint16_t bg = active ? COL_ACCENT : COL_PANEL;
     uint16_t fg = active ? TFT_BLACK : COL_TEXT;
 
-    tft.fillRoundRect(bx + 4, y + 6, btnW - 8, NAV_H - 12, 8, bg);
-    tft.drawRoundRect(bx + 4, y + 6, btnW - 8, NAV_H - 12, 8, active ? COL_ACCENT : COL_STROKE);
+    tft.fillRoundRect(bx + 2, y + 5, btnW - 4, NAV_H - 10, 7, bg);
+    tft.drawRoundRect(bx + 2, y + 5, btnW - 4, NAV_H - 10, 7, active ? COL_ACCENT : COL_STROKE);
 
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(fg, bg);
-    tft.drawString(names[i], bx + btnW / 2, y + NAV_H / 2, 1);
+    tft.drawString(NAV_NAMES[i], bx + btnW / 2, y + NAV_H / 2, 1);
   }
 
   tft.setTextDatum(TL_DATUM);
@@ -1382,7 +1516,7 @@ int drawWrappedTextLimited(int x, int y, int maxW, const String& text, int font,
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(fg, bg);
 
-  const int lineH = tft.fontHeight(font) + 2;
+  const int lineH = tft.fontHeight((uint8_t)font) + 2;
   String line = "";
   String word = "";
   int linesDrawn = 0;
@@ -1398,9 +1532,9 @@ int drawWrappedTextLimited(int x, int y, int maxW, const String& text, int font,
   auto placeWordOnEmptyLine = [&]() {
     if (word.length() == 0 || linesDrawn >= maxLines) return;
 
-    while (tft.textWidth(word, font) > maxW && word.length() > 1) {
+    while (tft.textWidth(word.c_str(), lgfxFont(font)) > maxW && word.length() > 1) {
       int cut = word.length();
-      while (cut > 1 && tft.textWidth(word.substring(0, cut), font) > maxW) cut--;
+      while (cut > 1 && tft.textWidth(word.substring(0, cut).c_str(), lgfxFont(font)) > maxW) cut--;
       if (linesDrawn >= maxLines) return;
       tft.drawString(word.substring(0, cut), x, y, font);
       y += lineH;
@@ -1423,7 +1557,7 @@ int drawWrappedTextLimited(int x, int y, int maxW, const String& text, int font,
     }
 
     String candidate = line + " " + word;
-    if (tft.textWidth(candidate, font) <= maxW) {
+    if (tft.textWidth(candidate.c_str(), lgfxFont(font)) <= maxW) {
       line = candidate;
       word = "";
       return;
@@ -1475,7 +1609,8 @@ void drawClockCardSprite(bool force = false) {
   String sr = formatMinuteOfDay(sunriseMin);
   String ss = formatMinuteOfDay(sunsetMin);
 
-  String combined = timeBuf + "|" + dateBuf + "|" + sr + "|" + ss + "|" +
+  String weekBuf = "W" + weekNumberText();
+  String combined = timeBuf + "|" + dateBuf + "|" + weekBuf + "|" + sr + "|" + ss + "|" +
                     String(COL_ACCENT) + "|" + String(COL_TEXT);
 
   if (!force && combined == cacheClock) return;
@@ -1492,7 +1627,7 @@ void drawClockCardSprite(bool force = false) {
     String clockSuffix = splitAt > 0 ? timeBuf.substring(splitAt + 1) : "";
     sprClock.drawString(clockMain, 10, 11, 4);
     if (clockSuffix.length() > 0) {
-      int suffixX = 10 + sprClock.textWidth(clockMain, 4) + 4;
+      int suffixX = 10 + sprClock.textWidth(clockMain.c_str(), lgfxFont(4)) + 4;
       sprClock.drawString(clockSuffix, suffixX, 18, 2);
     }
   } else {
@@ -1501,6 +1636,8 @@ void drawClockCardSprite(bool force = false) {
 
   sprClock.setTextColor(COL_DIM, COL_PANEL);
   sprClock.drawString(dateBuf, 10, 45, 2);
+  int dateTextW = sprClock.textWidth(dateBuf.c_str(), lgfxFont(2));
+  sprClock.drawString(weekBuf, 10 + dateTextW + 7, 45, 2);
 
   drawCleanSunIcon(sprClock, 151, 22, COL_ACCENT);
   drawMoonIcon(sprClock, 151, 50, COL_ACCENT);
@@ -1510,30 +1647,6 @@ void drawClockCardSprite(bool force = false) {
   sprClock.drawString(ss, 165, 43, 2);
 
   pushSpriteAndDelete(sprClock, x, y);
-}
-
-void drawMetricSprite(int x, int y, int w, int h, const char* label, const String& value, String& cache, bool force = false, const String& detail = "") {
-  String combined = String(label) + "|" + value + "|" + detail + "|" + String(COL_PANEL) + "|" +
-                    String(COL_STROKE) + "|" + String(COL_TEXT);
-
-  if (!force && combined == cache) return;
-  cache = combined;
-
-  makeSpriteCard(sprSmall, w, h, true);
-
-  sprSmall.setTextDatum(TL_DATUM);
-  sprSmall.setTextColor(COL_DIM, COL_PANEL);
-  sprSmall.drawString(label, 10, 8, 2);
-
-  sprSmall.setTextColor(COL_TEXT, COL_PANEL);
-  sprSmall.drawString(value, 10, 31, 4);
-
-  if (detail.length() > 0) {
-    sprSmall.setTextColor(COL_ACCENT, COL_PANEL);
-    sprSmall.drawString(detail, 10, 55, 1);
-  }
-
-  pushSpriteAndDelete(sprSmall, x, y);
 }
 
 void drawWeatherStyleMetricSprite(int x, int y, int w, int h, const char* label, const String& value, String& cache, bool force = false, const String& detail = "") {
@@ -1582,30 +1695,12 @@ void drawSunEventWidget(int x, int y, int w, int h, String& cache, bool force = 
     String suffix = splitAt > 0 ? value.substring(splitAt + 1) : "";
     sprSmall.drawString(mainValue, 10, 30, 4);
     if (suffix.length() > 0) {
-      int suffixX = 10 + sprSmall.textWidth(mainValue, 4) + 3;
+      int suffixX = 10 + sprSmall.textWidth(mainValue.c_str(), lgfxFont(4)) + 3;
       sprSmall.drawString(suffix, suffixX, 35, 2);
     }
   } else {
     sprSmall.drawString(value, 10, 30, 4);
   }
-
-  pushSpriteAndDelete(sprSmall, x, y);
-}
-
-void drawPlaceholderSprite(int x, int y, int w, int h, const char* label, String& cache, bool force = false) {
-  String combined = String(label) + "|" + String(COL_PANEL) + "|" + String(COL_STROKE) + "|" + String(COL_TEXT);
-
-  if (!force && combined == cache) return;
-  cache = combined;
-
-  makeSpriteCard(sprSmall, w, h, true);
-
-  sprSmall.setTextDatum(TL_DATUM);
-  sprSmall.setTextColor(COL_DIM, COL_PANEL);
-  sprSmall.drawString(label, 10, 8, 2);
-
-  sprSmall.setTextColor(COL_STROKE, COL_PANEL);
-  sprSmall.drawString("Empty", 10, 31, 2);
 
   pushSpriteAndDelete(sprSmall, x, y);
 }
@@ -1646,7 +1741,7 @@ void drawHomeSlotWidget(int slot, bool force = false) {
 
   switch (homeWidgetSlots[slot]) {
     case HOME_WIDGET_WEEK:
-      drawMetricSprite(x, y, w, h, "Week", weekNumberText(), cacheHomeSlots[slot], force);
+      drawWeatherStyleMetricSprite(x, y, w, h, "Week", weekNumberText(), cacheHomeSlots[slot], force);
       break;
     case HOME_WIDGET_TIMER:
       drawFocusTimerWidget(x, y, w, h, cacheHomeSlots[slot], force);
@@ -1669,6 +1764,22 @@ void drawHomeSlotWidget(int slot, bool force = false) {
     case HOME_WIDGET_SUN:
       drawSunEventWidget(x, y, w, h, cacheHomeSlots[slot], force);
       break;
+    case HOME_WIDGET_HYDRATION:
+      drawHydrationWidget(x, y, w, h, cacheHomeSlots[slot], force);
+      break;
+    case HOME_WIDGET_HABITS:
+      drawHabitsWidget(x, y, w, h, cacheHomeSlots[slot], force);
+      break;
+    case HOME_WIDGET_HA1:
+    case HOME_WIDGET_HA2:
+    case HOME_WIDGET_HA3:
+    case HOME_WIDGET_HA4: {
+      int hi = homeWidgetSlots[slot] - HOME_WIDGET_HA1;
+      String lbl = haSensorLabel[hi].length() > 0 ? haSensorLabel[hi] : (String("HA ") + String(hi + 1));
+      String val = haSensorValue[hi].length() > 0 ? haSensorValue[hi] : "--";
+      drawWeatherStyleMetricSprite(x, y, w, h, lbl.c_str(), val, cacheHomeSlots[slot], force, haSensorUnit[hi]);
+      break;
+    }
   }
 }
 
@@ -1771,8 +1882,6 @@ void drawHomePageFull() {
   drawNavBar();
 
   cacheClock = "";
-  cacheHomeEmpty1 = "";
-  cacheHomeEmpty2 = "";
   cacheFocusTimer = "";
   for (int i = 0; i < HOME_SLOT_COUNT; i++) {
     cacheHomeSlots[i] = "";
@@ -1899,7 +2008,7 @@ void updateWeatherDynamic() {
       String sunSuffix = splitAt > 0 ? nt.substring(splitAt + 1) : "";
       tft.drawString(sunMain, 18, PAGE_ROW3_Y + 26, 4);
       if (sunSuffix.length() > 0) {
-        int suffixX = 18 + tft.textWidth(sunMain, 4) + 3;
+        int suffixX = 18 + tft.textWidth(sunMain.c_str(), lgfxFont(4)) + 3;
         tft.drawString(sunSuffix, suffixX, PAGE_ROW3_Y + 31, 2);
       }
     } else {
@@ -1937,12 +2046,29 @@ void drawNotesPageFull() {
 }
 
 void updateNotesDynamic() {
-  if (notesText != lastNotesText || notesDirty) {
-    tft.fillRect(18, 54, 204, 196, COL_PANEL);
-    drawWrappedTextLimited(18, 54, 198, notesText, 2, COL_TEXT, COL_PANEL, 12);
-    lastNotesText = notesText;
-    notesDirty = false;
+  String combined = notesText;
+  for (int i = 0; i < STICKY_COUNT; i++) combined += stickyNote[i];
+  if (combined == lastNotesText && !notesDirty && !stickyDirty) return;
+  lastNotesText = combined;
+  notesDirty  = false;
+  stickyDirty = false;
+
+  tft.fillRect(18, 54, 204, 196, COL_PANEL);
+
+  int y = 54;
+  // Show sticky notes first (if any)
+  for (int i = 0; i < STICKY_COUNT; i++) {
+    if (stickyNote[i].length() == 0) continue;
+    tft.fillRoundRect(18, y, 200, 22, 4, COL_PANEL_ALT);
+    tft.drawRoundRect(18, y, 200, 22, 4, COL_ACCENT);
+    tft.setTextColor(COL_ACCENT, COL_PANEL_ALT);
+    tft.drawString(stickyNote[i].substring(0, 32), 24, y + 6, 1);
+    y += 26;
   }
+  if (y > 54) { tft.drawFastHLine(18, y + 2, 204, COL_STROKE); y += 8; }
+
+  // Then the regular notes
+  if (y < 240) drawWrappedTextLimited(18, y, 198, notesText, 2, COL_TEXT, COL_PANEL, 8);
 }
 
 void drawStatusPageFull() {
@@ -2027,12 +2153,445 @@ void updateStatusDynamic() {
   }
 }
 
+// =========================================================
+// HABIT PAGE
+// =========================================================
+void drawHabitsPageFull() {
+  tft.fillScreen(COL_BG);
+  drawTopBar("Habits");
+  drawNavBar();
+  cacheHabitPage = "";
+  pageDirty = false;
+  lastDrawnPage = PAGE_HABITS;
+}
+
+void updateHabitsDynamic() {
+  // Build cache key from state
+  String key = "";
+  for (int i = 0; i < HABIT_COUNT; i++) {
+    if (!habitsEnabled[i]) continue;
+    key += String(habitDone[i] ? "1" : "0");
+    key += habitStreak[i];
+  }
+  key += String(COL_ACCENT);
+  if (key == cacheHabitPage) return;
+  cacheHabitPage = key;
+
+  const int startY = 42;
+  const int rowH   = 44;
+  const int padX   = 8;
+  const int w      = SCREEN_W - padX * 2;
+
+  int row = 0;
+  for (int i = 0; i < HABIT_COUNT; i++) {
+    if (!habitsEnabled[i]) continue;
+    if (row > 5) break;
+    int y = startY + row * rowH;
+
+    uint16_t bg = habitDone[i] ? COL_PANEL_ALT : COL_PANEL;
+    uint16_t border = habitDone[i] ? COL_ACCENT : COL_STROKE;
+
+    tft.fillRoundRect(padX, y, w, rowH - 4, 8, bg);
+    tft.drawRoundRect(padX, y, w, rowH - 4, 8, border);
+
+    // Checkbox
+    int cbX = padX + 10;
+    int cbY = y + (rowH - 4) / 2 - 8;
+    tft.drawRoundRect(cbX, cbY, 16, 16, 3, habitDone[i] ? COL_ACCENT : COL_STROKE);
+    if (habitDone[i]) {
+      tft.fillRoundRect(cbX + 2, cbY + 2, 12, 12, 2, COL_ACCENT);
+    }
+
+    // Name
+    tft.setTextColor(habitDone[i] ? COL_DIM : COL_TEXT, bg);
+    tft.drawString(habitName[i], cbX + 24, y + 8, 2);
+
+    // Streak
+    if (habitStreak[i] > 0) {
+      tft.setTextColor(COL_ACCENT, bg);
+      String s = String(habitStreak[i]) + " day" + (habitStreak[i] == 1 ? "" : "s");
+      tft.drawString(s, cbX + 24, y + 24, 1);
+    }
+
+    row++;
+  }
+
+  if (row == 0) {
+    tft.setTextColor(COL_DIM, COL_BG);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("Configure habits", SCREEN_W / 2, SCREEN_H / 2 - 10, 2);
+    tft.drawString("in the web UI", SCREEN_W / 2, SCREEN_H / 2 + 10, 1);
+    tft.setTextDatum(TL_DATUM);
+  } else {
+    // Progress bar
+    int total = habitsActiveCount();
+    int done  = habitsDoneCount();
+    if (total > 0) {
+      int barY = startY + row * rowH + 4;
+      int barW = SCREEN_W - 16;
+      tft.fillRoundRect(8, barY, barW, 8, 4, COL_PANEL);
+      int fillW = (barW * done) / total;
+      if (fillW > 0) tft.fillRoundRect(8, barY, fillW, 8, 4, COL_ACCENT);
+      tft.setTextColor(COL_DIM, COL_BG);
+      tft.drawString(String(done) + "/" + String(total) + " done", 8, barY + 12, 1);
+    }
+  }
+}
+
+bool handleHabitsTouch(int x, int y) {
+  if (currentPage != PAGE_HABITS) return false;
+  if (y < 42 || y > SCREEN_H - NAV_H) return false;
+
+  const int rowH = 44;
+  const int padX = 8;
+  const int w    = SCREEN_W - padX * 2;
+  int row = 0;
+
+  for (int i = 0; i < HABIT_COUNT; i++) {
+    if (!habitsEnabled[i]) continue;
+    int ry = 42 + row * rowH;
+    if (y >= ry && y < ry + rowH - 4 && x >= padX && x < padX + w) {
+      habitDone[i] = !habitDone[i];
+      // save done state to NVS immediately
+      prefs.putBool(("hab" + String(i) + "d").c_str(), habitDone[i]);
+      cacheHabitPage = "";
+      // update ambient color
+      if (ambientColorEnabled) {
+        // Shift accent from original toward green based on completion
+        int total = habitsActiveCount();
+        int done  = habitsDoneCount();
+        if (total > 0) {
+          float r = (float)done / total;
+          // cyan 0x5EFA → green 0x07E0
+          int gr = (int)(11 - 11 * r);
+          int gg = (int)(55 + 8 * r);
+          int gb = (int)(26 - 26 * r);
+          COL_ACCENT = ((uint16_t)gr << 11) | ((uint16_t)gg << 5) | (uint16_t)gb;
+        }
+      }
+      pageDirty = true;
+      return true;
+    }
+    row++;
+  }
+  return false;
+}
+
+void checkMidnightHabitReset() {
+  time_t now = time(nullptr);
+  if (now < NTP_MIN_EPOCH) return;
+  struct tm t;
+  localtime_r(&now, &t);
+  char today[9];
+  strftime(today, sizeof(today), "%Y%m%d", &t);
+  if (String(today) == habitLastDate) return;
+
+  // New day — update streaks and reset done flags
+  for (int i = 0; i < HABIT_COUNT; i++) {
+    if (!habitsEnabled[i]) continue;
+    bool wasDone = prefs.getBool(("hab" + String(i) + "d").c_str(), false);
+    if (wasDone) {
+      habitStreak[i]++;
+    } else {
+      habitStreak[i] = 0;
+    }
+    habitDone[i] = false;
+    prefs.putInt(("hab" + String(i) + "s").c_str(), habitStreak[i]);
+    prefs.putBool(("hab" + String(i) + "d").c_str(), false);
+  }
+
+  // Reset hydration if new day
+  if (hydrationDate != String(today)) {
+    hydrationCount = 0;
+    hydrationDate  = String(today);
+    prefs.putInt("hydCount", 0);
+    prefs.putString("hydDate", hydrationDate);
+    cacheHydration = "";
+  }
+
+  habitLastDate = String(today);
+  prefs.putString("habDate", habitLastDate);
+  cacheHabitPage = "";
+  clearHomeSlotCaches();
+  pageDirty = true;
+}
+
+// =========================================================
+// HA PAGE
+// =========================================================
+bool fetchHaSensor(int idx) {
+  if (haUrl.length() == 0 || haToken.length() == 0) return false;
+  if (haSensorEntity[idx].length() == 0) return false;
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  WiFiClient client;
+  HTTPClient http;
+  String url = haUrl + "/api/states/" + haSensorEntity[idx];
+  http.begin(client, url);
+  http.addHeader("Authorization", "Bearer " + haToken);
+  http.addHeader("Content-Type", "application/json");
+  int code = http.GET();
+  if (code != 200) { http.end(); return false; }
+
+  String body = http.getString();
+  http.end();
+
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return false;
+  haSensorValue[idx] = doc["state"].as<String>();
+  // try to get unit from attributes
+  if (doc["attributes"]["unit_of_measurement"].is<const char*>()) {
+    haSensorUnit[idx] = doc["attributes"]["unit_of_measurement"].as<String>();
+  }
+  return true;
+}
+
+bool fetchHaCtrlState(int idx) {
+  if (haUrl.length() == 0 || haToken.length() == 0) return false;
+  if (haCtrlEntity[idx].length() == 0) return false;
+  if (WiFi.status() != WL_CONNECTED) return false;
+  if (haCtrlType[idx] == "scene" || haCtrlType[idx] == "script") return false;
+
+  WiFiClient client;
+  HTTPClient http;
+  String url = haUrl + "/api/states/" + haCtrlEntity[idx];
+  http.begin(client, url);
+  http.addHeader("Authorization", "Bearer " + haToken);
+  int code = http.GET();
+  if (code != 200) { http.end(); return false; }
+  String body = http.getString();
+  http.end();
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return false;
+  haCtrlState[idx] = (String(doc["state"].as<String>()) == "on");
+  return true;
+}
+
+void callHaService(int idx) {
+  if (haUrl.length() == 0 || haToken.length() == 0) return;
+  if (haCtrlEntity[idx].length() == 0) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  WiFiClient client;
+  HTTPClient http;
+  String domain = haCtrlType[idx];
+  String service;
+  String body;
+
+  if (haCtrlType[idx] == "scene") {
+    domain = "scene";
+    service = "turn_on";
+    body = "{\"entity_id\":\"" + haCtrlEntity[idx] + "\"}";
+  } else if (haCtrlType[idx] == "script") {
+    domain = "script";
+    service = "turn_on";
+    body = "{\"entity_id\":\"" + haCtrlEntity[idx] + "\"}";
+  } else {
+    // switch or light — toggle
+    service = haCtrlState[idx] ? "turn_off" : "turn_on";
+    haCtrlState[idx] = !haCtrlState[idx];
+    body = "{\"entity_id\":\"" + haCtrlEntity[idx] + "\"}";
+  }
+
+  String url = haUrl + "/api/services/" + domain + "/" + service;
+  http.begin(client, url);
+  http.addHeader("Authorization", "Bearer " + haToken);
+  http.addHeader("Content-Type", "application/json");
+  http.POST(body);
+  http.end();
+  cacheHaPage = "";
+  pageDirty = true;
+}
+
+void ensureHaData() {
+  if (haUrl.length() == 0 || haToken.length() == 0) return;
+  time_t now = time(nullptr);
+  if (now - lastHaFetch < HA_INTERVAL_SEC) return;
+  lastHaFetch = now;
+  for (int i = 0; i < HA_SENSOR_COUNT; i++) fetchHaSensor(i);
+  for (int i = 0; i < HA_CTRL_COUNT; i++) fetchHaCtrlState(i);
+  cacheHaPage = "";
+  if (currentPage == PAGE_HA) pageDirty = true;
+}
+
+void drawHaPageFull() {
+  tft.fillScreen(COL_BG);
+  drawTopBar("Home Assistant");
+  drawNavBar();
+
+  // Tab row below top bar
+  const int tabY = TOPBAR_H + 2;
+  const int tabH = 26;
+  const int tabW = SCREEN_W / 2;
+
+  tft.fillRect(0, tabY, SCREEN_W, tabH, COL_PANEL_ALT);
+  const char* tabs[2] = {"Sensors", "Controls"};
+  for (int i = 0; i < 2; i++) {
+    bool sel = (haPageTab == i);
+    uint16_t bg = sel ? COL_ACCENT : COL_PANEL;
+    uint16_t fg = sel ? TFT_BLACK : COL_DIM;
+    tft.fillRoundRect(i * tabW + 2, tabY + 2, tabW - 4, tabH - 4, 6, bg);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(fg, bg);
+    tft.drawString(tabs[i], i * tabW + tabW / 2, tabY + tabH / 2, 1);
+    tft.setTextDatum(TL_DATUM);
+  }
+
+  cacheHaPage = "";
+  pageDirty = false;
+  lastDrawnPage = PAGE_HA;
+}
+
+void updateHaDynamic() {
+  String key = String(haPageTab);
+  if (haPageTab == 0) {
+    for (int i = 0; i < HA_SENSOR_COUNT; i++) key += haSensorValue[i] + haSensorLabel[i];
+  } else {
+    for (int i = 0; i < HA_CTRL_COUNT; i++) key += String(haCtrlState[i]) + haCtrlLabel[i];
+  }
+  key += String(COL_ACCENT);
+  if (key == cacheHaPage) return;
+  cacheHaPage = key;
+
+  const int startY = TOPBAR_H + 30;
+  const int rowH   = 58;
+  const int padX   = 8;
+  const int w      = SCREEN_W - padX * 2;
+
+  if (haPageTab == 0) {
+    // Sensors
+    for (int i = 0; i < HA_SENSOR_COUNT; i++) {
+      int y = startY + i * rowH;
+      if (y + rowH > SCREEN_H - NAV_H) break;
+      tft.fillRoundRect(padX, y, w, rowH - 4, 8, COL_PANEL);
+      tft.drawRoundRect(padX, y, w, rowH - 4, 8, COL_STROKE);
+      tft.setTextColor(COL_DIM, COL_PANEL);
+      String lbl = haSensorEntity[i].length() > 0 ? haSensorLabel[i] : "— not configured —";
+      tft.drawString(lbl, padX + 8, y + 6, 1);
+      tft.setTextColor(COL_TEXT, COL_PANEL);
+      String val = haSensorValue[i] + (haSensorUnit[i].length() > 0 ? " " + haSensorUnit[i] : "");
+      tft.drawString(val, padX + 8, y + 22, 4);
+    }
+  } else {
+    // Controls
+    for (int i = 0; i < HA_CTRL_COUNT; i++) {
+      int y = startY + i * rowH;
+      if (y + rowH > SCREEN_H - NAV_H) break;
+      bool isToggle = (haCtrlType[i] == "switch" || haCtrlType[i] == "light");
+      bool on = haCtrlState[i];
+      uint16_t border = (isToggle && on) ? COL_ACCENT : COL_STROKE;
+      uint16_t bg = (isToggle && on) ? COL_PANEL_ALT : COL_PANEL;
+      tft.fillRoundRect(padX, y, w, rowH - 4, 8, bg);
+      tft.drawRoundRect(padX, y, w, rowH - 4, 8, border);
+      tft.setTextColor(COL_DIM, bg);
+      String lbl = haCtrlEntity[i].length() > 0 ? haCtrlLabel[i] : "— not configured —";
+      tft.drawString(lbl, padX + 8, y + 8, 2);
+      tft.setTextColor((isToggle && on) ? COL_ACCENT : COL_DIM, bg);
+      if (haCtrlType[i] == "scene") tft.drawString("Tap to activate", padX + 8, y + 30, 1);
+      else if (haCtrlType[i] == "script") tft.drawString("Tap to run", padX + 8, y + 30, 1);
+      else tft.drawString(on ? "ON" : "OFF", padX + 8, y + 30, 2);
+    }
+  }
+}
+
+bool handleHaTouch(int x, int y) {
+  if (currentPage != PAGE_HA) return false;
+
+  // Tab switch
+  const int tabY = TOPBAR_H + 2;
+  const int tabH = 26;
+  if (y >= tabY && y < tabY + tabH) {
+    int newTab = (x < SCREEN_W / 2) ? 0 : 1;
+    if (newTab != haPageTab) {
+      haPageTab = newTab;
+      cacheHaPage = "";
+      pageDirty = true;
+    }
+    return true;
+  }
+
+  if (haPageTab == 1) {
+    const int startY = TOPBAR_H + 30;
+    const int rowH   = 58;
+    const int padX   = 8;
+    const int w      = SCREEN_W - padX * 2;
+    for (int i = 0; i < HA_CTRL_COUNT; i++) {
+      int ry = startY + i * rowH;
+      if (y >= ry && y < ry + rowH - 4 && x >= padX && x < padX + w) {
+        if (haCtrlEntity[i].length() > 0) callHaService(i);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// =========================================================
+// HYDRATION HOME WIDGET
+// =========================================================
+void drawHydrationWidget(int x, int y, int w, int h, String& cache, bool force = false) {
+  String today = "";
+  time_t now = time(nullptr);
+  if (now > NTP_MIN_EPOCH) {
+    struct tm t; localtime_r(&now, &t);
+    char buf[9]; strftime(buf, sizeof(buf), "%Y%m%d", &t);
+    today = String(buf);
+    if (today != hydrationDate) {
+      hydrationCount = 0;
+      hydrationDate  = today;
+      prefs.putInt("hydCount", 0);
+      prefs.putString("hydDate", hydrationDate);
+    }
+  }
+
+  String combined = String(hydrationCount) + "|" + String(COL_PANEL) + String(COL_ACCENT);
+  if (!force && combined == cache) return;
+  cache = combined;
+
+  makeSpriteCard(sprSmall, w, h, false);
+  sprSmall.setTextDatum(TL_DATUM);
+  sprSmall.setTextColor(COL_DIM, COL_PANEL);
+  sprSmall.drawString("Water", 10, 8, 2);
+
+  String val = String(hydrationCount) + "/" + String(HYDRATION_GOAL);
+  uint16_t col = hydrationCount >= HYDRATION_GOAL ? COL_GREEN : COL_TEXT;
+  sprSmall.setTextColor(col, COL_PANEL);
+  sprSmall.drawString(val, 10, 28, 4);
+
+  // Small progress dots
+  for (int i = 0; i < HYDRATION_GOAL; i++) {
+    uint16_t dc = (i < hydrationCount) ? COL_ACCENT : COL_STROKE;
+    sprSmall.fillCircle(10 + i * 12, 58, 4, dc);
+  }
+  pushSpriteAndDelete(sprSmall, x, y);
+}
+
+void drawHabitsWidget(int x, int y, int w, int h, String& cache, bool force = false) {
+  int total = habitsActiveCount();
+  int done  = habitsDoneCount();
+  String combined = String(done) + "/" + String(total) + "|" + String(COL_ACCENT);
+  if (!force && combined == cache) return;
+  cache = combined;
+
+  makeSpriteCard(sprSmall, w, h, false);
+  sprSmall.setTextDatum(TL_DATUM);
+  sprSmall.setTextColor(COL_DIM, COL_PANEL);
+  sprSmall.drawString("Habits", 10, 8, 2);
+  sprSmall.setTextColor(done == total && total > 0 ? COL_GREEN : COL_TEXT, COL_PANEL);
+  sprSmall.drawString(String(done) + "/" + String(total), 10, 28, 4);
+  sprSmall.setTextColor(COL_DIM, COL_PANEL);
+  sprSmall.drawString(done == total && total > 0 ? "All done!" : "Tap for details", 10, 55, 1);
+  pushSpriteAndDelete(sprSmall, x, y);
+}
+
 void drawCurrentPageFull() {
   switch (currentPage) {
     case PAGE_HOME:    drawHomePageFull(); break;
     case PAGE_WEATHER: drawWeatherPageFull(); break;
     case PAGE_NOTES:   drawNotesPageFull(); break;
     case PAGE_STATUS:  drawStatusPageFull(); break;
+    case PAGE_HABITS:  drawHabitsPageFull(); break;
+    case PAGE_HA:      drawHaPageFull(); break;
   }
 
   if (focusMenuOpen && currentPage == PAGE_HOME) drawFocusMenuOverlay(true);
@@ -2055,6 +2614,8 @@ void updateCurrentPageDynamic() {
     case PAGE_WEATHER: updateWeatherDynamic(); break;
     case PAGE_NOTES:   updateNotesDynamic(); break;
     case PAGE_STATUS:  updateStatusDynamic(); break;
+    case PAGE_HABITS:  updateHabitsDynamic(); break;
+    case PAGE_HA:      updateHaDynamic(); break;
   }
 }
 
@@ -2113,12 +2674,11 @@ bool handleHomeTouch(int x, int y) {
   if (focusMenuOpen) return handleFocusMenuTouch(x, y);
 
   for (int slot = 0; slot < HOME_SLOT_COUNT; slot++) {
-    if (homeWidgetSlots[slot] != HOME_WIDGET_TIMER) continue;
-
     int slotX, slotY, slotW, slotH;
     getHomeSlotRect(slot, slotX, slotY, slotW, slotH);
+    if (x < slotX || x >= slotX + slotW || y < slotY || y >= slotY + slotH) continue;
 
-    if (x >= slotX && x < slotX + slotW && y >= slotY && y < slotY + slotH) {
+    if (homeWidgetSlots[slot] == HOME_WIDGET_TIMER) {
       if (focusTimerFinished) {
         resetFocusTimer();
       } else {
@@ -2127,6 +2687,22 @@ bool handleHomeTouch(int x, int y) {
         clearHomeSlotCaches();
         cacheTimerMenu = "";
       }
+      pageDirty = true;
+      return true;
+    }
+
+    if (homeWidgetSlots[slot] == HOME_WIDGET_HYDRATION) {
+      if (hydrationCount < HYDRATION_GOAL) {
+        hydrationCount++;
+        prefs.putInt("hydCount", hydrationCount);
+        cacheHomeSlots[slot] = "";
+        pageDirty = true;
+      }
+      return true;
+    }
+
+    if (homeWidgetSlots[slot] == HOME_WIDGET_HABITS) {
+      currentPage = PAGE_HABITS;
       pageDirty = true;
       return true;
     }
@@ -2160,14 +2736,16 @@ bool handleStatusTouch(int x, int y) {
 void handleNavTouch(int x, int y) {
   if (y < SCREEN_H - NAV_H) return;
 
-  int btnW = SCREEN_W / 4;
+  int btnW = SCREEN_W / NAV_COUNT;
   int idx = x / btnW;
-  if (idx < 0 || idx > 3) return;
+  if (idx < 0 || idx >= NAV_COUNT) return;
 
-  Page newPage = (Page)idx;
+  Page newPage = NAV_PAGES[idx];
   if (newPage != currentPage) {
     currentPage = newPage;
     pageDirty = true;
+    cacheHabitPage = "";
+    cacheHaPage = "";
   }
 }
 
@@ -2189,7 +2767,7 @@ void handleRoot() {
   }
 
   String page;
-  page.reserve(21000);
+  page.reserve(24000);
 
   page += "<!doctype html><html><head>";
   page += "<meta charset='utf-8'>";
@@ -2244,6 +2822,25 @@ void handleRoot() {
   page += ".timer-slot input{padding:10px 12px;text-align:center;font-weight:700;}";
   page += ".timer-unit{font-size:12px;color:#8ea3ba;white-space:nowrap;}";
   page += "@media(max-width:820px){.layout{grid-template-columns:1fr;}.grid,.grid-3,.timer-slot-grid{grid-template-columns:1fr;}.color-row{grid-template-columns:1fr;}}";
+  page += ".wdg-wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;}";
+  page += ".wdg-screen{flex-shrink:0;}";
+  page += ".wdg-display{width:180px;background:#0b1220;border:2px solid #334155;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,.35);}";
+  page += ".wdg-clock{height:86px;background:#172235;border-bottom:1px solid #334155;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:#38bdf8;text-align:center;}";
+  page += ".wdg-clock-time{font-size:22px;font-weight:700;letter-spacing:.04em;}";
+  page += ".wdg-clock-sub{font-size:9px;color:#64748b;letter-spacing:.03em;}";
+  page += ".wdg-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px;}";
+  page += ".wdg-slot{min-height:52px;background:#0f1c2e;border:2px dashed #2d3f55;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#475569;text-align:center;padding:6px;line-height:1.3;cursor:grab;user-select:none;transition:border-color .15s,background .15s,color .15s;}";
+  page += ".wdg-slot.filled{border-style:solid;border-color:#38bdf840;color:#cbd5e1;background:#172235;}";
+  page += ".wdg-slot.wdg-over{border-color:#38bdf8!important;background:#0e2540!important;color:#38bdf8!important;}";
+  page += ".wdg-nav{height:28px;background:#172235;border-top:1px solid #334155;display:flex;align-items:center;justify-content:center;font-size:8px;color:#475569;gap:6px;}";
+  page += ".wdg-nav-dot{width:5px;height:5px;border-radius:50%;background:#334155;}";
+  page += ".wdg-nav-dot.active{background:#38bdf8;}";
+  page += ".wdg-palette{flex:1;min-width:200px;}";
+  page += ".wdg-palette-label{font-size:12px;color:#64748b;margin-bottom:10px;}";
+  page += ".wdg-chips{display:flex;flex-wrap:wrap;gap:8px;}";
+  page += ".wdg-chip{padding:8px 14px;background:#0b1220;border:1px solid #334155;border-radius:10px;font-size:13px;color:#edf2f7;cursor:grab;user-select:none;transition:border-color .15s,box-shadow .15s;}";
+  page += ".wdg-chip:hover{border-color:#38bdf8;box-shadow:0 0 0 1px #38bdf840;}";
+  page += ".wdg-chip.wdg-dragging{opacity:.35;}";
   page += "</style></head><body><div class='wrap'>";
   page += "<div class='hero'>";
   page += "<h1>Deskbuddy</h1>";
@@ -2372,21 +2969,127 @@ void handleRoot() {
   page += "<div class='panel' data-panel='widgets'>";
   page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Widget Customization</h2><span class='panel-chevron'>&#9662;</span></button>";
   page += "<div class='panel-body'>";
-  page += "<p>Choose which widgets appear in the four Home slots below the clock card.</p>";
-  page += "<div class='grid'>";
+  page += "<div class='wdg-wrap'>";
+
+  // Mini display preview
+  page += "<div class='wdg-screen'>";
+  page += "<div class='wdg-display'>";
+  page += "<div class='wdg-clock'><div class='wdg-clock-time'>12:00</div><div class='wdg-clock-sub'>Mon 28 Jun &nbsp;&bull;&nbsp; 18°</div></div>";
+  page += "<div class='wdg-grid'>";
   for (int i = 0; i < HOME_SLOT_COUNT; i++) {
-    page += "<div><label class='label'>";
-    page += homeSlotLabel(i);
-    page += "</label><select name='homeSlot";
-    page += String(i);
-    page += "'>";
-    appendHomeWidgetOptions(page, homeSlotKeys[i]);
-    page += "</select></div>";
+    page += "<div class='wdg-slot filled' draggable='true' id='ws" + String(i) + "' data-slot='" + String(i) + "' data-key='" + homeSlotKeys[i] + "'>";
+    page += homeWidgetLabel(homeWidgetFromKey(homeSlotKeys[i]));
+    page += "</div>";
   }
+  page += "</div>";
+  page += "<div class='wdg-nav'>";
+  page += "<div class='wdg-nav-dot active'></div>";
+  page += "<div class='wdg-nav-dot'></div>";
+  page += "<div class='wdg-nav-dot'></div>";
+  page += "<div class='wdg-nav-dot'></div>";
+  page += "<div class='wdg-nav-dot'></div>";
+  page += "</div>";
+  page += "</div>";
+  page += "</div>";
+
+  // Widget palette
+  page += "<div class='wdg-palette'>";
+  page += "<p class='wdg-palette-label'>Drag onto a slot &mdash; or drag slots to swap</p>";
+  page += "<div class='wdg-chips'>";
+  const HomeWidgetType wdgAllTypes[] = {
+    HOME_WIDGET_WEEK, HOME_WIDGET_TIMER, HOME_WIDGET_RAIN,
+    HOME_WIDGET_OUTDOOR, HOME_WIDGET_KP, HOME_WIDGET_UV,
+    HOME_WIDGET_WIND, HOME_WIDGET_SUN, HOME_WIDGET_HYDRATION, HOME_WIDGET_HABITS,
+    HOME_WIDGET_HA1, HOME_WIDGET_HA2, HOME_WIDGET_HA3, HOME_WIDGET_HA4
+  };
+  for (HomeWidgetType wt : wdgAllTypes) {
+    String chipLabel = String(homeWidgetLabel(wt));
+    if (wt >= HOME_WIDGET_HA1 && wt <= HOME_WIDGET_HA4) {
+      int hi = wt - HOME_WIDGET_HA1;
+      if (haSensorLabel[hi].length() > 0) chipLabel = haSensorLabel[hi];
+    }
+    page += "<div class='wdg-chip' draggable='true' data-key='" + String(homeWidgetKey(wt)) + "'>" + htmlEscape(chipLabel) + "</div>";
+  }
+  page += "</div></div>";
+
+  // Hidden inputs (submitted with form)
+  for (int i = 0; i < HOME_SLOT_COUNT; i++) {
+    page += "<input type='hidden' name='homeSlot" + String(i) + "' id='hs" + String(i) + "' value='" + homeSlotKeys[i] + "'>";
+  }
+
   page += "</div>";
   page += "</div></div>";
 
+  // ── Habits panel ──────────────────────────────────────────
+  page += "<div class='panel' data-panel='habits'>";
+  page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Habit Tracker</h2><span class='panel-chevron'>&#9662;</span></button>";
+  page += "<div class='panel-body'>";
+  page += "<p>Define up to 6 daily habits. Enable the ones you want to track. Streaks reset at midnight.</p>";
+  page += "<div class='settings-block'><label style='display:flex;align-items:center;gap:10px;color:#edf2f7;'><input type='checkbox' name='ambColor' value='1'" + String(ambientColorEnabled ? " checked" : "") + " style='width:auto;'>Ambient color shift (accent shifts cyan→green as habits complete)</label></div>";
+  page += "<div class='timer-slot-grid' style='grid-template-columns:1fr 1fr;'>";
+  for (int i = 0; i < HABIT_COUNT; i++) {
+    page += "<div class='timer-slot'>";
+    page += "<div class='timer-slot-head'>";
+    page += "<label style='display:flex;align-items:center;gap:6px;'>";
+    page += "<input type='checkbox' name='habE" + String(i) + "' value='1'" + String(habitsEnabled[i] ? " checked" : "") + " style='width:auto;'>";
+    page += "Habit " + String(i+1) + "</label></div>";
+    page += "<input type='text' name='habN" + String(i) + "' maxlength='20' value='" + htmlEscape(habitName[i]) + "' placeholder='Name...'>";
+    if (habitStreak[i] > 0) page += "<div class='muted' style='margin-top:4px;'>Streak: " + String(habitStreak[i]) + " days</div>";
+    page += "</div>";
+  }
+  page += "</div></div></div>";
+
+  // ── Home Assistant panel ───────────────────────────────────
+  page += "<div class='panel' data-panel='ha'>";
+  page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Home Assistant</h2><span class='panel-chevron'>&#9662;</span></button>";
+  page += "<div class='panel-body'>";
+  page += "<p>Connect to your local Home Assistant. The token never leaves your network.</p>";
+  page += "<div class='settings-block'><span class='settings-title'>Connection</span>";
+  page += "<div class='grid'>";
+  page += "<div><label class='label'>HA URL</label><input name='haUrl' value='" + htmlEscape(haUrl) + "' placeholder='http://homeassistant.local:8123'></div>";
+  page += "<div><label class='label'>Long-lived access token</label><input type='password' name='haToken' value='" + htmlEscape(haToken) + "' placeholder='eyJ...'></div>";
+  page += "</div></div>";
+  page += "<div class='settings-block'><span class='settings-title'>Sensors (4 slots)</span><div class='settings-desc'>Entity IDs like sensor.office_temperature. Value + unit shown automatically.</div>";
+  page += "<div class='grid'>";
+  for (int i = 0; i < HA_SENSOR_COUNT; i++) {
+    page += "<div><label class='label'>Sensor " + String(i+1) + " label</label><input name='haSl" + String(i) + "' value='" + htmlEscape(haSensorLabel[i]) + "'></div>";
+    page += "<div><label class='label'>Entity ID</label><input name='haSe" + String(i) + "' value='" + htmlEscape(haSensorEntity[i]) + "' placeholder='sensor.xxx'></div>";
+  }
+  page += "</div></div>";
+  page += "<div class='settings-block'><span class='settings-title'>Controls (4 buttons)</span><div class='settings-desc'>Switches, lights, scenes, or scripts. Type determines tap behaviour.</div>";
+  page += "<div class='grid'>";
+  for (int i = 0; i < HA_CTRL_COUNT; i++) {
+    page += "<div><label class='label'>Control " + String(i+1) + " label</label><input name='haCl" + String(i) + "' value='" + htmlEscape(haCtrlLabel[i]) + "'></div>";
+    page += "<div><label class='label'>Entity ID + type</label><div style='display:flex;gap:6px;'>";
+    page += "<input name='haCe" + String(i) + "' value='" + htmlEscape(haCtrlEntity[i]) + "' placeholder='switch.xxx' style='flex:2;'>";
+    page += "<select name='haCt" + String(i) + "' style='flex:1;'>";
+    const char* types[] = {"switch","light","scene","script"};
+    for (const char* t : types) {
+      page += "<option value='" + String(t) + "'" + (haCtrlType[i] == t ? " selected" : "") + ">" + String(t) + "</option>";
+    }
+    page += "</select></div></div>";
+  }
+  page += "</div></div>";
+  page += "</div></div>";
+
   page += "</div><div class='stack'>";
+
+  // ── Quick sticky note ──────────────────────────────────────
+  page += "<div class='panel' data-panel='quicknote'>";
+  page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Quick Note</h2><span class='panel-chevron'>&#9662;</span></button>";
+  page += "<div class='panel-body'>";
+  page += "<p>Send a sticky note to the display. Also callable via: <code>curl http://" + WiFi.localIP().toString() + "/api/note -d '{\"msg\":\"text\"}'</code></p>";
+  for (int i = 0; i < STICKY_COUNT; i++) {
+    if (stickyNote[i].length() == 0) continue;
+    page += "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:8px 10px;background:#0b1220;border:1px solid #38bdf830;border-radius:8px;'>";
+    page += "<span style='flex:1;font-size:13px;color:#edf2f7;'>" + htmlEscape(stickyNote[i]) + "</span>";
+    page += "<a href='/api/note/clear?id=" + String(i) + "' style='color:#f87171;font-size:11px;text-decoration:none;' onclick=\"fetch('/api/note/clear',{method:'POST',body:'{\\\"id\\\":"+String(i)+"}',headers:{'Content-Type':'application/json'}});this.closest('div').remove();return false;\">✕</a>";
+    page += "</div>";
+  }
+  page += "<div style='display:flex;gap:8px;margin-top:8px;'>";
+  page += "<input id='quickNoteInput' type='text' maxlength='80' placeholder='Type a note...' style='flex:1;'>";
+  page += "<button type='button' onclick=\"var v=document.getElementById('quickNoteInput').value;if(v){fetch('/api/note',{method:'POST',body:JSON.stringify({msg:v}),headers:{'Content-Type':'application/json'}}).then(()=>{location.reload();});}\">Send</button>";
+  page += "</div></div></div>";
 
   page += "<button type='submit'>Save to Deskbuddy</button>";
   page += "</div></div></form>";
@@ -2420,6 +3123,31 @@ void handleRoot() {
   page += "if(panelId){state[panelId]=collapsed;writePanelState(state);}";
   page += "});";
   page += "});";
+  // Widget drag-and-drop
+  page += "(function(){";
+  page += "var wdgLabels={week:'Week',timer:'Timer',rain:'Rain',outdoor:'Outdoor',kp:'KP Index',uv:'UV Index',wind:'Wind',sun:'Sun',hydration:'Hydration',habits:'Habits'};";
+  page += "var dragKey=null,dragFrom=null;";
+  page += "function setSlot(idx,key){";
+  page += "var s=document.getElementById('ws'+idx);";
+  page += "s.textContent=wdgLabels[key]||key;s.setAttribute('data-key',key);";
+  page += "s.classList.toggle('filled',!!key);";
+  page += "document.getElementById('hs'+idx).value=key;";
+  page += "}";
+  page += "document.querySelectorAll('.wdg-chip').forEach(function(c){";
+  page += "c.addEventListener('dragstart',function(e){dragKey=c.getAttribute('data-key');dragFrom=null;c.classList.add('wdg-dragging');e.dataTransfer.effectAllowed='copy';e.dataTransfer.setData('text/plain',dragKey);});";
+  page += "c.addEventListener('dragend',function(){c.classList.remove('wdg-dragging');});";
+  page += "});";
+  page += "document.querySelectorAll('.wdg-slot').forEach(function(s){";
+  page += "s.addEventListener('dragstart',function(e){var k=s.getAttribute('data-key');dragKey=k||null;dragFrom=+s.getAttribute('data-slot');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragKey||'');});";
+  page += "s.addEventListener('dragover',function(e){e.preventDefault();s.classList.add('wdg-over');e.dataTransfer.dropEffect='move';});";
+  page += "s.addEventListener('dragleave',function(e){if(!s.contains(e.relatedTarget))s.classList.remove('wdg-over');});";
+  page += "s.addEventListener('drop',function(e){e.preventDefault();s.classList.remove('wdg-over');";
+  page += "if(dragKey===null)return;";
+  page += "var to=+s.getAttribute('data-slot');";
+  page += "if(dragFrom!==null&&dragFrom!==to){setSlot(dragFrom,s.getAttribute('data-key')||'');}";
+  page += "setSlot(to,dragKey);dragKey=null;dragFrom=null;});";
+  page += "});";
+  page += "})();";
   page += "</script>";
   page += "</div></body></html>";
 
@@ -2500,6 +3228,37 @@ void handleSave() {
   prefs.putFloat("lng", LNG);
   prefs.putInt("sleepMin", sleepIntervalMin);
   prefs.putBool("flashMode", flashModeEnabled);
+
+  // Habits
+  ambientColorEnabled = server.hasArg("ambColor");
+  prefs.putBool("ambColor", ambientColorEnabled);
+  for (int i = 0; i < HABIT_COUNT; i++) {
+    String k = "hab" + String(i);
+    habitsEnabled[i] = server.hasArg("habE" + String(i));
+    if (server.hasArg("habN" + String(i))) {
+      habitName[i] = server.arg("habN" + String(i));
+      habitName[i].trim();
+    }
+    prefs.putBool((k+"e").c_str(), habitsEnabled[i]);
+    prefs.putString((k+"n").c_str(), habitName[i]);
+  }
+  cacheHabitPage = "";
+
+  // Home Assistant
+  if (server.hasArg("haUrl"))   { haUrl   = server.arg("haUrl");   haUrl.trim();   prefs.putString("haUrl", haUrl); }
+  if (server.hasArg("haToken")) { haToken = server.arg("haToken"); haToken.trim(); prefs.putString("haToken", haToken); }
+  for (int i = 0; i < HA_SENSOR_COUNT; i++) {
+    if (server.hasArg("haSe"+String(i))) { haSensorEntity[i] = server.arg("haSe"+String(i)); haSensorEntity[i].trim(); prefs.putString(("haSe"+String(i)).c_str(), haSensorEntity[i]); }
+    if (server.hasArg("haSl"+String(i))) { haSensorLabel[i]  = server.arg("haSl"+String(i)); prefs.putString(("haSl"+String(i)).c_str(), haSensorLabel[i]); }
+  }
+  for (int i = 0; i < HA_CTRL_COUNT; i++) {
+    if (server.hasArg("haCe"+String(i))) { haCtrlEntity[i] = server.arg("haCe"+String(i)); haCtrlEntity[i].trim(); prefs.putString(("haCe"+String(i)).c_str(), haCtrlEntity[i]); }
+    if (server.hasArg("haCl"+String(i))) { haCtrlLabel[i]  = server.arg("haCl"+String(i)); prefs.putString(("haCl"+String(i)).c_str(), haCtrlLabel[i]); }
+    if (server.hasArg("haCt"+String(i))) { haCtrlType[i]   = server.arg("haCt"+String(i)); prefs.putString(("haCt"+String(i)).c_str(), haCtrlType[i]); }
+  }
+  lastHaFetch = 0;  // force HA refresh after config change
+  cacheHaPage = "";
+
   for (int i = 0; i < HOME_SLOT_COUNT; i++) {
     String key = String("homeSlot") + String(i);
     prefs.putString(key.c_str(), homeWidgetKey(homeWidgetSlots[i]));
@@ -2519,8 +3278,6 @@ void handleSave() {
   dataDirty = true;
 
   cacheClock = "";
-  cacheHomeEmpty1 = "";
-  cacheHomeEmpty2 = "";
   cacheFocusTimer = "";
   cacheTimerMenu = "";
   cacheTimerDone = "";
@@ -2544,9 +3301,89 @@ void handleSave() {
   server.send(303);
 }
 
+// ── Sticky Notes API ─────────────────────────────────────────
+void handleApiNote() {
+  if (server.method() == HTTP_POST) {
+    String body = server.arg("plain");
+    // Accept JSON {"msg":"..."} or plain text
+    String msg = body;
+    int mStart = body.indexOf("\"msg\"");
+    if (mStart >= 0) {
+      int q1 = body.indexOf('"', mStart + 5);
+      int q2 = body.indexOf('"', q1 + 1);
+      if (q1 >= 0 && q2 > q1) msg = body.substring(q1 + 1, q2);
+    }
+    msg.trim();
+    if (msg.length() > 0) {
+      // Shift notes down, add new at top
+      for (int i = STICKY_COUNT - 1; i > 0; i--) stickyNote[i] = stickyNote[i-1];
+      stickyNote[0] = msg.substring(0, 80);
+      for (int i = 0; i < STICKY_COUNT; i++) prefs.putString(("sticky"+String(i)).c_str(), stickyNote[i]);
+      stickyDirty = true;
+      server.send(200, "application/json", "{\"ok\":true}");
+    } else {
+      server.send(400, "application/json", "{\"error\":\"empty message\"}");
+    }
+  } else if (server.method() == HTTP_GET) {
+    // GET ?msg=text also works (bookmarkable)
+    if (server.hasArg("msg")) {
+      String msg = server.arg("msg");
+      msg.trim();
+      if (msg.length() > 0) {
+        for (int i = STICKY_COUNT - 1; i > 0; i--) stickyNote[i] = stickyNote[i-1];
+        stickyNote[0] = msg.substring(0, 80);
+        for (int i = 0; i < STICKY_COUNT; i++) prefs.putString(("sticky"+String(i)).c_str(), stickyNote[i]);
+        stickyDirty = true;
+        server.send(200, "text/plain", "Note saved: " + msg);
+        return;
+      }
+    }
+    // Return current notes as JSON
+    String json = "[";
+    for (int i = 0; i < STICKY_COUNT; i++) {
+      if (i > 0) json += ",";
+      json += "\"" + stickyNote[i] + "\"";
+    }
+    json += "]";
+    server.send(200, "application/json", json);
+  } else {
+    server.send(405, "text/plain", "Method not allowed");
+  }
+}
+
+void handleApiNoteClear() {
+  int idx = server.hasArg("id") ? server.arg("id").toInt() : -1;
+  if (idx >= 0 && idx < STICKY_COUNT) {
+    stickyNote[idx] = "";
+    prefs.putString(("sticky"+String(idx)).c_str(), "");
+  } else {
+    for (int i = 0; i < STICKY_COUNT; i++) { stickyNote[i] = ""; prefs.putString(("sticky"+String(i)).c_str(), ""); }
+  }
+  stickyDirty = true;
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleApiStatus() {
+  String json = "{";
+  json += "\"uptime\":" + String(millis()/1000);
+  json += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+  json += ",\"wifi\":\"" + wifiStatusText() + "\"";
+  json += ",\"habits_done\":" + String(habitsDoneCount());
+  json += ",\"habits_total\":" + String(habitsActiveCount());
+  json += ",\"hydration\":" + String(hydrationCount);
+  json += "}";
+  server.send(200, "application/json", json);
+}
+
 void setupWebServer() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/save", HTTP_POST, handleSave);
+  // Sticky notes API — callable from any device on the LAN
+  server.on("/api/note",  HTTP_POST, handleApiNote);
+  server.on("/api/note",  HTTP_GET,  handleApiNote);
+  server.on("/api/note/clear", HTTP_POST, handleApiNoteClear);
+  // Status JSON API
+  server.on("/api/status", HTTP_GET, handleApiStatus);
   server.begin();
 }
 
@@ -2556,7 +3393,7 @@ void setupWebServer() {
 void waitForNtpTime() {
   time_t now = time(nullptr);
   unsigned long t0 = millis();
-  while (now < 1700000000 && millis() - t0 < 10000) {
+  while (now < NTP_MIN_EPOCH && millis() - t0 < 10000) {
     delay(200);
     now = time(nullptr);
   }
@@ -2627,16 +3464,11 @@ void setWifiEnabled(bool enabled) {
 void setup() {
   Serial.begin(115200);
 
-  pinMode(BACKLIGHT_PIN, OUTPUT);
-  analogWrite(BACKLIGHT_PIN, BL_FULL);
   pinMode(27, OUTPUT);
   digitalWrite(27, HIGH);
 
   loadStoredSettings();
-  setBacklight(BL_FULL);
   lastInteractionMs = millis();
-
-  delay(200);
 
   tft.init();
   tft.setRotation(ROT);
@@ -2651,7 +3483,7 @@ void setup() {
   pinMode(TOUCH_CS, OUTPUT);
   digitalWrite(TOUCH_CS, HIGH);
   ts.begin(touchSPI);
-  ts.setRotation(ROT);
+  ts.setRotation(2);  // physical display orientation is effective rotation 2 (offset_rotation=2 + ROT=0)
 
   tft.drawString("Connecting WiFi...", 10, 34, 2);
   connectWiFi(true);
@@ -2711,17 +3543,16 @@ void loop() {
     if (tx >= SCREEN_W - 36 && ty <= TOPBAR_H) {
       toggleSleepMode();
       pageDirty = true;
+    } else if (tx >= 174 && tx <= 206 && ty <= TOPBAR_H) {
+      // Info button → toggle Status page
+      currentPage = (currentPage == PAGE_STATUS) ? PAGE_HOME : PAGE_STATUS;
+      pageDirty = true;
     } else {
-      if (sleepDimmed) {
-        if (!manualDimMode) {
-          wakeDisplay();
-        } else {
-          if (!handleHomeTouch(tx, ty) && !handleStatusTouch(tx, ty)) {
-            handleNavTouch(tx, ty);
-          }
-        }
+      if (sleepDimmed && !manualDimMode) {
+        wakeDisplay();
       } else {
-        if (!handleHomeTouch(tx, ty) && !handleStatusTouch(tx, ty)) {
+        if (!handleHomeTouch(tx, ty) && !handleStatusTouch(tx, ty) &&
+            !handleHabitsTouch(tx, ty) && !handleHaTouch(tx, ty)) {
           handleNavTouch(tx, ty);
         }
       }
@@ -2733,6 +3564,8 @@ void loop() {
     ensureSunTimesForToday();
     ensureWeather();
     ensureKpIndex();
+    ensureHaData();
+    checkMidnightHabitReset();
   }
 
   if (pageDirty || lastDrawnPage != currentPage) {
