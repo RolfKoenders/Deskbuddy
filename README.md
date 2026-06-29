@@ -1,37 +1,22 @@
-# Deskbuddy
+<div align="center">
 
-A compact ESP32 desk dashboard with a touchscreen display, live weather, Home Assistant integration, habit tracking, a focus timer, and a browser-based configurator. Built for the ESP32-2432S028 ("Cheap Yellow Display").
+<img src="docs/logo.svg" width="220" alt="DeskBuddy — a desk dashboard on an ESP32 display">
 
-<!-- Device photo — drop your image into docs/ and uncomment:
-![Deskbuddy on desk](docs/device.jpg)
+# DeskBuddy
+
+A compact ESP32 desk companion with a touchscreen display, live weather, Home Assistant integration, habit tracking, a focus timer, and a browser-based configurator. Built for the **ESP32-2432S028** ("Cheap Yellow Display").
+
+[Features](#features) · [Screenshots](#screenshots) · [Getting started](#getting-started) · [Device web UI](#device-web-ui) · [Hardware](#hardware) · [Credits](#credits)
+
+</div>
+
+---
+
+<!-- Drop your device photo into docs/ and uncomment:
+<div align="center">
+<img src="docs/device.jpg" width="500" alt="DeskBuddy on a desk">
+</div>
 -->
-
----
-
-## Screenshots
-
-### Configurator
-
-![Configurator — Features tab](docs/configurator_features.png)
-![Configurator — Settings tab](docs/configurator_settings.png)
-
-### Device web UI
-
-![Device UI — home widget layout](docs/webui_widgets.png)
-![Device UI — appearance settings](docs/webui_appearance.png)
-
----
-
-## Hardware
-
-| Part | Link |
-|------|------|
-| ESP32-2432S028 (2.8" CYD) | [AliExpress](https://www.aliexpress.com/item/1005010525144441.html) |
-| 3D printed case | [MakerWorld](https://makerworld.com/en/models/2725262-deskbuddy-your-personal-dashboard) |
-
-The ESP32-2432S028 is a self-contained board with a 240×320 resistive touch display, sold for around €10–15. No wiring or soldering required.
-
----
 
 ## Features
 
@@ -39,8 +24,8 @@ The ESP32-2432S028 is a self-contained board with a 240×320 resistive touch dis
 
 | Page | What it shows |
 |------|---------------|
-| **Home** | Clock, week number, context clock, sunrise/sunset times, and 4 configurable widgets |
-| **Weather** | Detailed weather: temperature range, rain, wind, UV index, KP index, sun event |
+| **Home** | Clock, week number, context clock, sunrise/sunset, and 4 configurable widgets |
+| **Weather** | Temperature range, rain, wind, UV index, KP index, sun event |
 | **Habits** | Daily habit tracker with 6 habits, streaks, and tap-to-check |
 | **Home Assistant** | Live values from up to 4 HA sensor entities |
 | **Notes** | Sticky note pushed via REST API from any device on your network |
@@ -48,19 +33,21 @@ The ESP32-2432S028 is a self-contained board with a 240×320 resistive touch dis
 
 ### Home widgets
 
-Choose any 4 from:
+Choose any 4 of these to show on your home screen:
 
-- **Week number** (current ISO week)
-- **Focus timer** (configurable countdown with presets)
-- **Outdoor temp** (current temperature + daily range)
-- **Rain** (precipitation forecast)
-- **Wind** (speed and compass direction)
-- **UV index** (Low / Moderate / High / Very High / Extreme)
-- **KP index** (geomagnetic activity level)
-- **Sun event** (next sunrise or sunset, auto-switching)
-- **Hydration** (water intake counter, resets at midnight)
-- **Habits** (mini habit completion summary)
-- **HA Sensors 1–4** (any Home Assistant sensor value with unit)
+| Widget | Description |
+|--------|-------------|
+| Week number | Current ISO week |
+| Focus timer | Configurable countdown with presets |
+| Outdoor temp | Current temperature + daily range |
+| Rain | Precipitation forecast |
+| Wind | Speed and compass direction |
+| UV index | Low / Moderate / High / Very High / Extreme |
+| KP index | Geomagnetic activity level |
+| Sun event | Next sunrise or sunset, auto-switching |
+| Hydration | Water intake counter, resets at midnight |
+| Habits | Mini habit completion summary |
+| HA Sensors 1–4 | Any Home Assistant sensor value with unit |
 
 ### Themes
 
@@ -68,35 +55,36 @@ Choose any 4 from:
 
 **Accents:** Standard · Cyan · Ice · White · Mint · Green · Blue · Purple · Pink · Orange · Amber · Red
 
-All theme changes apply instantly via the browser UI. No reflashing needed.
+All theme changes apply instantly via the browser UI — no reflashing needed.
 
-### Other
+### More
 
-- Context clock: show a second timezone on the clock card (great for remote teams)
-- Eye break reminders: 20-20-20 rule overlay every N minutes, auto-dismisses after 20 seconds
-- Movement reminders: "Time to move!" overlay every N minutes, tap to dismiss
-- Auto-dimming and manual dim/off sleep modes, touch to wake
-- NTP time sync with timezone selection (UTC through UTC+12, DST support for Europe, US, AU and more)
-- Metric and imperial units, European and US date/time format
-- Per-device nickname displayed in the title bar
-- Sticky Notes REST API (`POST /api/note`) to push notes from automations or scripts
-- OTA firmware updates: flash new firmware directly from the browser, no USB needed after initial setup
+- **Context clock** — show a second timezone on the clock card (great for remote teams)
+- **Eye break reminders** — 20-20-20 rule overlay every N minutes, auto-dismisses after 20 seconds
+- **Movement reminders** — "Time to move!" overlay every N minutes, tap to dismiss
+- **Auto-dimming** — sleep modes with touch-to-wake; configurable dim and off intervals
+- **NTP time sync** — timezone selection (UTC–UTC+12) with DST support for Europe, US, AU and more
+- **Metric / imperial** — switch units and date format without reflashing
+- **Nickname** — per-device label shown in the browser title bar
+- **OTA updates** — flash new firmware over WiFi from the browser, no USB after initial setup
 
 ---
 
-## Project structure
+## Screenshots
 
-```
-├── src/
-│   └── main.cpp              # Firmware (LovyanGFX, PlatformIO)
-├── include/
-│   ├── LGFX_config.hpp       # Display + touch driver config
-│   ├── secrets.h             # Your WiFi + location (gitignored, create from example)
-│   └── secrets.h.example     # Template
-├── configurator.py           # Local browser-based build & flash tool
-├── platformio.ini            # PlatformIO project
-└── desk_buddy_github.cpp     # Standalone single-file version for Arduino IDE
-```
+### Browser configurator
+
+<div align="center">
+<img src="docs/configurator_features.png" width="700" alt="Configurator — Features tab">
+<img src="docs/configurator_settings.png" width="700" alt="Configurator — Settings tab">
+</div>
+
+### Device web UI
+
+<div align="center">
+<img src="docs/webui_widgets.png" width="700" alt="Device UI — widget customization and appearance">
+<img src="docs/webui_appearance.png" width="700" alt="Device UI — appearance color pickers">
+</div>
 
 ---
 
@@ -111,24 +99,20 @@ cd Deskbuddy
 
 # 2. Create your secrets file
 cp include/secrets.h.example include/secrets.h
-# Edit secrets.h: add WiFi credentials and your city's coordinates
+# Edit secrets.h — add WiFi credentials and your city's coordinates
 
 # 3. Flash over USB
 pio run --target upload
 
 # 4. Open the device web UI
-# Check serial monitor for the IP address, then open it in your browser
+# Check serial monitor for the IP, then open it in a browser
 ```
 
-Or use the **Python configurator** for a browser-based build, flash, and OTA tool. See [SETUP_GUIDE.md](SETUP_GUIDE.md#configurator).
-
-After the initial USB flash, future updates can be pushed wirelessly using the OTA feature.
+Or use the **Python configurator** (`python configurator.py`) for a browser-based build, flash, and OTA tool. After the initial USB flash, future updates can be pushed wirelessly.
 
 ---
 
 ## Flashing
-
-Deskbuddy supports three ways to get firmware onto the device:
 
 | Method | When to use |
 |--------|-------------|
@@ -136,27 +120,24 @@ Deskbuddy supports three ways to get firmware onto the device:
 | Configurator "Flash via USB" (USB) | Same as above, with a browser UI |
 | Configurator "Flash OTA" (WiFi) | After initial setup — no USB cable needed |
 
-The OTA option in the configurator compiles the firmware and pushes it to the device over WiFi in one click. The device reboots automatically when the upload completes.
-
 You can also upload a `.bin` manually at `http://<device-ip>/update`.
 
 ---
 
 ## Device web UI
 
-Once the device is on your network, open its IP address in any browser. From there you can change:
+Open the device's IP address in any browser to change settings live — no reflash required:
 
-- Theme (background + accent + text color)
-- Widget layout (which 4 widgets appear on the home screen)
-- Context clock (second timezone + short label)
+- Widget layout (drag and drop which 4 widgets appear on the home screen)
+- Theme — background, accent color, text color
+- Context clock — second timezone + short label
 - Location name, latitude, longitude
-- Timezone and units
+- Timezone, units, date format
 - Focus timer presets
 - Eye break and movement reminder intervals
-- Nickname
-- Sleep/dim behavior
-
-No reflash required for any of these settings.
+- Buddy nickname
+- Sleep / dim behavior
+- Home Assistant connection and sensor entity IDs
 
 ---
 
@@ -183,7 +164,34 @@ Works great with Home Assistant automations or a desktop shortcut.
 
 ## Home Assistant integration
 
-In the device web UI, configure the HA base URL, bearer token, and up to 4 entity IDs. Deskbuddy polls those entities and shows the current state and unit on dedicated home widgets.
+In the device web UI, configure the HA base URL, bearer token, and up to 4 entity IDs. DeskBuddy polls those entities every 30 seconds over LAN and shows the current state and unit on dedicated home widgets and the HA page.
+
+---
+
+## Hardware
+
+| Part | Link |
+|------|------|
+| ESP32-2432S028 (2.8" CYD) | [AliExpress](https://www.aliexpress.com/item/1005010525144441.html) |
+| 3D printed case | [MakerWorld](https://makerworld.com/en/models/2725262-deskbuddy-your-personal-dashboard) |
+
+The ESP32-2432S028 is a self-contained board with a 240×320 resistive touch display, sold for around €10–15. No wiring or soldering required.
+
+---
+
+## Project structure
+
+```
+├── src/
+│   └── main.cpp              # Firmware (LovyanGFX, PlatformIO)
+├── include/
+│   ├── LGFX_config.hpp       # Display + touch driver config
+│   ├── secrets.h             # Your WiFi + location (gitignored, create from example)
+│   └── secrets.h.example     # Template
+├── configurator.py           # Local browser-based build & flash tool
+├── platformio.ini            # PlatformIO project
+└── desk_buddy_github.cpp     # Standalone single-file version for Arduino IDE
+```
 
 ---
 
