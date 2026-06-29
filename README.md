@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/logo.svg" width="220" alt="DeskBuddy — a desk dashboard on an ESP32 display">
+<img src="docs/device.jpg" width="340" alt="DeskBuddy — ESP32 desk dashboard in 3D printed stand">
 
 # DeskBuddy
 
@@ -9,14 +9,6 @@ A compact ESP32 desk companion with a touchscreen display, live weather, Home As
 [Features](#features) · [Getting started](#getting-started) · [Device web UI](#device-web-ui) · [Hardware](#hardware) · [Credits](#credits)
 
 </div>
-
----
-
-<!-- Drop your device photo into docs/ and uncomment:
-<div align="center">
-<img src="docs/device.jpg" width="500" alt="DeskBuddy on a desk">
-</div>
--->
 
 ## Features
 
@@ -128,7 +120,7 @@ Open the device's IP address in any browser to change settings live — no refla
 
 <div align="center">
 <img src="docs/webui_widgets.png" width="700" alt="Device UI — widget customization and appearance">
-<img src="docs/webui_appearance.png" width="700" alt="Device UI — appearance color pickers">
+<img src="docs/webui_appearance.png" width="700" alt="Device UI — settings panel">
 </div>
 
 ---
