@@ -6,7 +6,7 @@
 
 A compact ESP32 desk companion with a touchscreen display, live weather, Home Assistant integration, habit tracking, a focus timer, and a browser-based configurator. Built for the **ESP32-2432S028** ("Cheap Yellow Display").
 
-[Features](#features) · [Screenshots](#screenshots) · [Getting started](#getting-started) · [Device web UI](#device-web-ui) · [Hardware](#hardware) · [Credits](#credits)
+[Features](#features) · [Getting started](#getting-started) · [Device web UI](#device-web-ui) · [Hardware](#hardware) · [Credits](#credits)
 
 </div>
 
@@ -70,24 +70,6 @@ All theme changes apply instantly via the browser UI — no reflashing needed.
 
 ---
 
-## Screenshots
-
-### Browser configurator
-
-<div align="center">
-<img src="docs/configurator_features.png" width="700" alt="Configurator — Features tab">
-<img src="docs/configurator_settings.png" width="700" alt="Configurator — Settings tab">
-</div>
-
-### Device web UI
-
-<div align="center">
-<img src="docs/webui_widgets.png" width="700" alt="Device UI — widget customization and appearance">
-<img src="docs/webui_appearance.png" width="700" alt="Device UI — appearance color pickers">
-</div>
-
----
-
 ## Getting started
 
 See [SETUP_GUIDE.md](SETUP_GUIDE.md) for the full walkthrough. Quick version:
@@ -109,6 +91,11 @@ pio run --target upload
 ```
 
 Or use the **Python configurator** (`python configurator.py`) for a browser-based build, flash, and OTA tool. After the initial USB flash, future updates can be pushed wirelessly.
+
+<div align="center">
+<img src="docs/configurator_features.png" width="700" alt="Configurator — Features tab">
+<img src="docs/configurator_settings.png" width="700" alt="Configurator — Settings tab">
+</div>
 
 ---
 
@@ -138,6 +125,11 @@ Open the device's IP address in any browser to change settings live — no refla
 - Buddy nickname
 - Sleep / dim behavior
 - Home Assistant connection and sensor entity IDs
+
+<div align="center">
+<img src="docs/webui_widgets.png" width="700" alt="Device UI — widget customization and appearance">
+<img src="docs/webui_appearance.png" width="700" alt="Device UI — appearance color pickers">
+</div>
 
 ---
 
@@ -174,24 +166,6 @@ In the device web UI, configure the HA base URL, bearer token, and up to 4 entit
 |------|------|
 | ESP32-2432S028 (2.8" CYD) | [AliExpress](https://www.aliexpress.com/item/1005010525144441.html) |
 | 3D printed case | [MakerWorld](https://makerworld.com/en/models/2725262-deskbuddy-your-personal-dashboard) |
-
-The ESP32-2432S028 is a self-contained board with a 240×320 resistive touch display, sold for around €10–15. No wiring or soldering required.
-
----
-
-## Project structure
-
-```
-├── src/
-│   └── main.cpp              # Firmware (LovyanGFX, PlatformIO)
-├── include/
-│   ├── LGFX_config.hpp       # Display + touch driver config
-│   ├── secrets.h             # Your WiFi + location (gitignored, create from example)
-│   └── secrets.h.example     # Template
-├── configurator.py           # Local browser-based build & flash tool
-├── platformio.ini            # PlatformIO project
-└── desk_buddy_github.cpp     # Standalone single-file version for Arduino IDE
-```
 
 ---
 
