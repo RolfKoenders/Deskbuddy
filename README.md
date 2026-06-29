@@ -2,8 +2,23 @@
 
 A compact ESP32 desk dashboard with a touchscreen display, live weather, Home Assistant integration, habit tracking, a focus timer, and a browser-based configurator. Built for the ESP32-2432S028 ("Cheap Yellow Display").
 
-<!-- Add a photo of your device here -->
-<!-- ![Deskbuddy](docs/device.jpg) -->
+<!-- Device photo — drop your image into docs/ and uncomment:
+![Deskbuddy on desk](docs/device.jpg)
+-->
+
+---
+
+## Screenshots
+
+### Configurator
+
+![Configurator — Features tab](docs/configurator_features.png)
+![Configurator — Settings tab](docs/configurator_settings.png)
+
+### Device web UI
+
+![Device UI — home widget layout](docs/webui_widgets.png)
+![Device UI — appearance settings](docs/webui_appearance.png)
 
 ---
 
@@ -118,7 +133,7 @@ Deskbuddy supports three ways to get firmware onto the device:
 | Method | When to use |
 |--------|-------------|
 | `pio run --target upload` (USB) | Initial setup, or after changing `secrets.h` |
-| Configurator "Compile & Flash" (USB) | Same as above, with a browser UI |
+| Configurator "Flash via USB" (USB) | Same as above, with a browser UI |
 | Configurator "Flash OTA" (WiFi) | After initial setup — no USB cable needed |
 
 The OTA option in the configurator compiles the firmware and pushes it to the device over WiFi in one click. The device reboots automatically when the upload completes.

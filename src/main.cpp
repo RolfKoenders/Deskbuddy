@@ -2865,13 +2865,13 @@ void handleRoot() {
   page += "<style>";
   page += ":root{color-scheme:dark;}";
   page += "body{margin:0;background:linear-gradient(180deg,#0b1018 0%,#111827 100%);color:#edf2f7;font-family:system-ui,sans-serif;}";
-  page += ".wrap{max-width:980px;margin:0 auto;padding:28px 16px 36px;}";
+  page += ".wrap{max-width:780px;margin:0 auto;padding:28px 16px 100px;}";
   page += ".hero{margin-bottom:18px;padding:18px 20px;border:1px solid #243244;border-radius:20px;background:linear-gradient(135deg,#111927 0%,#172235 100%);box-shadow:0 10px 30px rgba(0,0,0,.22);}";
   page += ".hero h1{font-size:30px;margin:0 0 8px 0;}";
   page += ".hero p{margin:0;color:#a9b7c9;font-size:14px;}";
   page += ".ip{display:inline-block;margin-top:14px;padding:8px 12px;border-radius:999px;background:#0b1220;border:1px solid #334155;color:#dbe7f5;font-size:13px;}";
-  page += ".layout{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;align-items:start;}";
-  page += ".stack{display:grid;gap:16px;}";
+  page += ".stack{display:grid;gap:14px;}";
+  page += ".settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}";
   page += ".panel{background:#171b22;border:1px solid #2d3748;border-radius:18px;padding:18px;margin:0;}";
   page += ".panel-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;background:none;border:none;color:#edf2f7;padding:0;margin:0;cursor:pointer;text-align:left;}";
   page += ".panel-toggle:hover{color:#ffffff;}";
@@ -2888,6 +2888,8 @@ void handleRoot() {
   page += "textarea,input,select{width:100%;border-radius:12px;border:1px solid #334155;background:#0b1220;color:#edf2f7;padding:12px;box-sizing:border-box;font:inherit;}";
   page += "textarea{min-height:170px;resize:vertical;}";
   page += "button{margin-top:18px;background:#38bdf8;border:none;color:#001018;padding:13px 18px;border-radius:12px;font-weight:800;cursor:pointer;font:inherit;}";
+  page += ".save-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(10,15,24,.97);backdrop-filter:blur(12px);border-top:1px solid #2d3748;padding:14px 16px;z-index:100;}";
+  page += ".save-bar button{margin:0;width:100%;max-width:780px;display:block;margin-left:auto;margin-right:auto;padding:14px;font-size:15px;border-radius:14px;}";
   page += ".muted{font-size:13px;color:#94a3b8;line-height:1.45;}";
   page += ".footer-note{margin-top:10px;font-size:12px;color:#7f92a8;}";
   page += ".settings-block{margin-top:18px;padding-top:16px;border-top:1px solid #2b3545;}";
@@ -2910,7 +2912,7 @@ void handleRoot() {
   page += ".timer-slot-input{display:flex;align-items:center;gap:8px;}";
   page += ".timer-slot input{padding:10px 12px;text-align:center;font-weight:700;}";
   page += ".timer-unit{font-size:12px;color:#8ea3ba;white-space:nowrap;}";
-  page += "@media(max-width:820px){.layout{grid-template-columns:1fr;}.grid,.grid-3,.timer-slot-grid{grid-template-columns:1fr;}.color-row{grid-template-columns:1fr;}}";
+  page += "@media(max-width:600px){.grid,.grid-3,.timer-slot-grid,.settings-grid{grid-template-columns:1fr;}.color-row{grid-template-columns:1fr;}}";
   page += ".wdg-wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;}";
   page += ".wdg-screen{flex-shrink:0;}";
   page += ".wdg-display{width:180px;background:#0b1220;border:2px solid #334155;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,.35);}";
@@ -2934,31 +2936,64 @@ void handleRoot() {
   page += "<div class='hero'>";
   page += "<h1>Deskbuddy</h1>";
   page += "<p>Shape Deskbuddy into your own desk companion with widgets, notes, colors, and smart daily tools.</p>";
-  page += "<div class='ip'>ESP IP: ";
-  page += WiFi.localIP().toString();
+  page += "<div style='display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap;'>";
+  page += "<div class='ip'>&#128246; " + WiFi.localIP().toString() + "</div>";
+  page += "<a href='/update' title='Upload a .bin firmware file manually (backup flashing method)' style='font-size:12px;color:#5a7fa8;text-decoration:none;border:1px solid #2d3f58;border-radius:999px;padding:6px 12px;'>Update firmware &#8599;</a>";
   page += "</div></div>";
 
   page += "<form method='POST' action='/save'>";
-  page += "<div class='layout'><div class='stack'>";
+  page += "<div class='stack'>";
 
-  page += "<div class='panel' data-panel='notes'>";
-  page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Notes</h2><span class='panel-chevron'>&#9662;</span></button>";
+  // ── Widget Customization (first — most interactive) ───────────────────────
+  page += "<div class='panel' data-panel='widgets'>";
+  page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Widget Customization</h2><span class='panel-chevron'>&#9662;</span></button>";
   page += "<div class='panel-body'>";
-  page += "<p>Short notes synced to the device.</p>";
-  page += "<label class='label'>Notes</label>";
-  page += "<textarea name='notes' maxlength='700'>";
-  page += htmlEscape(notesText);
-  page += "</textarea>";
-  page += "<div class='muted'>Saved notes show up right away.</div>";
+  page += "<div class='wdg-wrap'>";
+  page += "<div class='wdg-screen'>";
+  page += "<div class='wdg-display'>";
+  page += "<div class='wdg-clock'><div class='wdg-clock-time'>12:00</div><div class='wdg-clock-sub'>Mon 28 Jun &nbsp;&bull;&nbsp; 18&deg;</div></div>";
+  page += "<div class='wdg-grid'>";
+  for (int i = 0; i < HOME_SLOT_COUNT; i++) {
+    HomeWidgetType slotType = homeWidgetFromKey(homeSlotKeys[i]);
+    String slotLabel = String(homeWidgetLabel(slotType));
+    if (slotType >= HOME_WIDGET_HA1 && slotType <= HOME_WIDGET_HA4) {
+      int hi = slotType - HOME_WIDGET_HA1;
+      if (haSensorLabel[hi].length() > 0) slotLabel = haSensorLabel[hi];
+    }
+    page += "<div class='wdg-slot filled' draggable='true' id='ws" + String(i) + "' data-slot='" + String(i) + "' data-key='" + homeSlotKeys[i] + "'>";
+    page += htmlEscape(slotLabel);
+    page += "</div>";
+  }
+  page += "</div>";
+  page += "<div class='wdg-nav'><div class='wdg-nav-dot active'></div><div class='wdg-nav-dot'></div><div class='wdg-nav-dot'></div><div class='wdg-nav-dot'></div><div class='wdg-nav-dot'></div></div>";
   page += "</div></div>";
+  page += "<div class='wdg-palette'>";
+  page += "<p class='wdg-palette-label'>Drag onto a slot &mdash; or drag slots to swap</p>";
+  page += "<div class='wdg-chips'>";
+  const HomeWidgetType wdgAllTypes[] = {
+    HOME_WIDGET_WEEK, HOME_WIDGET_TIMER, HOME_WIDGET_RAIN,
+    HOME_WIDGET_OUTDOOR, HOME_WIDGET_KP, HOME_WIDGET_UV,
+    HOME_WIDGET_WIND, HOME_WIDGET_SUN, HOME_WIDGET_HYDRATION, HOME_WIDGET_HABITS,
+    HOME_WIDGET_HA1, HOME_WIDGET_HA2, HOME_WIDGET_HA3, HOME_WIDGET_HA4
+  };
+  for (HomeWidgetType wt : wdgAllTypes) {
+    String chipLabel = String(homeWidgetLabel(wt));
+    if (wt >= HOME_WIDGET_HA1 && wt <= HOME_WIDGET_HA4) {
+      int hi = wt - HOME_WIDGET_HA1;
+      if (haSensorLabel[hi].length() > 0) chipLabel = haSensorLabel[hi];
+    }
+    page += "<div class='wdg-chip' draggable='true' data-key='" + String(homeWidgetKey(wt)) + "'>" + htmlEscape(chipLabel) + "</div>";
+  }
+  page += "</div></div>";
+  for (int i = 0; i < HOME_SLOT_COUNT; i++) {
+    page += "<input type='hidden' name='homeSlot" + String(i) + "' id='hs" + String(i) + "' value='" + homeSlotKeys[i] + "'>";
+  }
+  page += "</div></div></div>";
 
   page += "<div class='panel' data-panel='theme'>";
-  page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Theme and color</h2><span class='panel-chevron'>&#9662;</span></button>";
+  page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Appearance</h2><span class='panel-chevron'>&#9662;</span></button>";
   page += "<div class='panel-body'>";
-  page += "<p>Colors and visual style for the display.</p>";
-  page += "<div class='grid'>";
-
-  page += "<div style='grid-column:1 / -1;' class='color-stack'>";
+  page += "<div class='color-stack'>";
 
   page += "<div class='color-row'><div class='color-meta'><label class='label'>Accent</label><span class='color-value' id='accent-value'>";
   page += accent;
@@ -3009,8 +3044,6 @@ void handleRoot() {
   page += "<label class='swatch" + String(bg=="ochre"?" active":"") + "' style='background:" + themePreviewCss("ochre") + ";'><input type='radio' name='bg' value='ochre'" + String(bg=="ochre"?" checked":"") + "></label>";
   page += "</div></div>";
 
-  page += "</div>";
-
   page += "</div></div></div>";
 
   page += "<div class='panel' data-panel='settings'>";
@@ -3053,18 +3086,14 @@ void handleRoot() {
   page += "<div><label class='label'>Latitude</label><input name='lat' value='" + String(LAT, 6) + "'></div>";
   page += "<div><label class='label'>Longitude</label><input name='lng' value='" + String(LNG, 6) + "'></div>";
   page += "</div><div class='footer-note'>Enter your city's latitude and longitude (e.g. from maps.google.com).</div></div>";
-  page += "</div></div>";
 
-  // Context clock
-  page += "<div class='panel' data-panel='ctx-clock'>";
-  page += "<button type='button' class='panel-toggle' aria-expanded='false'><h2>Context Clock</h2><span class='panel-chevron'>&#9662;</span></button>";
-  page += "<div class='panel-body' style='display:none'>";
-  page += "<div class='footer-note' style='margin-bottom:12px;'>Show a second timezone on the clock card. Leave label empty to disable.</div>";
+  // Context Clock — merged as settings-block
+  page += "<div class='settings-block'><span class='settings-title'>Context Clock</span>";
+  page += "<div class='settings-desc'>Show a second timezone on the clock card, below the date. Leave label empty to disable.</div>";
   page += "<div class='settings-grid'>";
   page += "<div><label class='label'>Label (e.g. NYC, Tokyo)</label><input name='tz2label' maxlength='8' value='" + htmlEscape(tz2Label) + "'></div>";
   page += "<div><label class='label'>Timezone</label><select name='tz2'>";
   page += "<option value=''>-- Disabled --</option>";
-  // reuse same tz list helper inline
   auto tzOpt2 = [&](const String& key, const String& label) {
     page += "<option value='" + key + "'" + (tz2Key == key ? " selected" : "") + ">" + label + "</option>";
   };
@@ -3090,77 +3119,24 @@ void handleRoot() {
   tzOpt2("australia_sydney","Australia East (AEST)");
   tzOpt2("new_zealand","New Zealand (NZST)");
   page += "</select></div>";
-  page += "</div></div></div>";
-
-  // Reminders
-  page += "<div class='panel' data-panel='reminders'>";
-  page += "<button type='button' class='panel-toggle' aria-expanded='false'><h2>Reminders</h2><span class='panel-chevron'>&#9662;</span></button>";
-  page += "<div class='panel-body' style='display:none'>";
-  page += "<div class='settings-grid'>";
-  page += "<div><span class='settings-title'>Eye break (20-20-20)</span>"
-          "<label style='display:flex;align-items:center;gap:10px;color:#edf2f7;margin-bottom:10px;'>"
-          "<input type='checkbox' name='eyeBreak' value='1'" + String(eyeBreakEnabled ? " checked" : "") + " style='width:auto;'>Enable eye break reminder</label>"
-          "<label class='label'>Every (minutes)</label>"
-          "<input type='number' name='eyeBreakMin' min='5' max='120' value='" + String(eyeBreakIntervalMin) + "'></div>";
-  page += "<div><span class='settings-title'>Movement reminder</span>"
-          "<label style='display:flex;align-items:center;gap:10px;color:#edf2f7;margin-bottom:10px;'>"
-          "<input type='checkbox' name='moveRemind' value='1'" + String(moveEnabled ? " checked" : "") + " style='width:auto;'>Enable movement reminder</label>"
-          "<label class='label'>Every (minutes)</label>"
-          "<input type='number' name='moveMin' min='5' max='120' value='" + String(moveIntervalMin) + "'></div>";
-  page += "</div></div></div>";
-
-  page += "<div class='panel' data-panel='widgets'>";
-  page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Widget Customization</h2><span class='panel-chevron'>&#9662;</span></button>";
-  page += "<div class='panel-body'>";
-  page += "<div class='wdg-wrap'>";
-
-  // Mini display preview
-  page += "<div class='wdg-screen'>";
-  page += "<div class='wdg-display'>";
-  page += "<div class='wdg-clock'><div class='wdg-clock-time'>12:00</div><div class='wdg-clock-sub'>Mon 28 Jun &nbsp;&bull;&nbsp; 18°</div></div>";
-  page += "<div class='wdg-grid'>";
-  for (int i = 0; i < HOME_SLOT_COUNT; i++) {
-    page += "<div class='wdg-slot filled' draggable='true' id='ws" + String(i) + "' data-slot='" + String(i) + "' data-key='" + homeSlotKeys[i] + "'>";
-    page += homeWidgetLabel(homeWidgetFromKey(homeSlotKeys[i]));
-    page += "</div>";
-  }
-  page += "</div>";
-  page += "<div class='wdg-nav'>";
-  page += "<div class='wdg-nav-dot active'></div>";
-  page += "<div class='wdg-nav-dot'></div>";
-  page += "<div class='wdg-nav-dot'></div>";
-  page += "<div class='wdg-nav-dot'></div>";
-  page += "<div class='wdg-nav-dot'></div>";
-  page += "</div>";
-  page += "</div>";
-  page += "</div>";
-
-  // Widget palette
-  page += "<div class='wdg-palette'>";
-  page += "<p class='wdg-palette-label'>Drag onto a slot &mdash; or drag slots to swap</p>";
-  page += "<div class='wdg-chips'>";
-  const HomeWidgetType wdgAllTypes[] = {
-    HOME_WIDGET_WEEK, HOME_WIDGET_TIMER, HOME_WIDGET_RAIN,
-    HOME_WIDGET_OUTDOOR, HOME_WIDGET_KP, HOME_WIDGET_UV,
-    HOME_WIDGET_WIND, HOME_WIDGET_SUN, HOME_WIDGET_HYDRATION, HOME_WIDGET_HABITS,
-    HOME_WIDGET_HA1, HOME_WIDGET_HA2, HOME_WIDGET_HA3, HOME_WIDGET_HA4
-  };
-  for (HomeWidgetType wt : wdgAllTypes) {
-    String chipLabel = String(homeWidgetLabel(wt));
-    if (wt >= HOME_WIDGET_HA1 && wt <= HOME_WIDGET_HA4) {
-      int hi = wt - HOME_WIDGET_HA1;
-      if (haSensorLabel[hi].length() > 0) chipLabel = haSensorLabel[hi];
-    }
-    page += "<div class='wdg-chip' draggable='true' data-key='" + String(homeWidgetKey(wt)) + "'>" + htmlEscape(chipLabel) + "</div>";
-  }
   page += "</div></div>";
 
-  // Hidden inputs (submitted with form)
-  for (int i = 0; i < HOME_SLOT_COUNT; i++) {
-    page += "<input type='hidden' name='homeSlot" + String(i) + "' id='hs" + String(i) + "' value='" + homeSlotKeys[i] + "'>";
-  }
+  // Reminders — merged as settings-block
+  page += "<div class='settings-block'><span class='settings-title'>Reminders</span>";
+  page += "<div class='settings-desc'>Periodic full-screen overlays. Eye break auto-dismisses after 20 s; movement reminder waits for a tap.</div>";
+  page += "<div class='settings-grid'>";
+  page += "<div><span class='settings-title' style='font-size:13px;'>Eye break (20-20-20)</span>"
+          "<label style='display:flex;align-items:center;gap:10px;color:#edf2f7;margin:8px 0;'>"
+          "<input type='checkbox' name='eyeBreak' value='1'" + String(eyeBreakEnabled ? " checked" : "") + " style='width:auto;'>Enabled</label>"
+          "<label class='label'>Interval (minutes)</label>"
+          "<input type='number' name='eyeBreakMin' min='5' max='120' value='" + String(eyeBreakIntervalMin) + "'></div>";
+  page += "<div><span class='settings-title' style='font-size:13px;'>Movement reminder</span>"
+          "<label style='display:flex;align-items:center;gap:10px;color:#edf2f7;margin:8px 0;'>"
+          "<input type='checkbox' name='moveRemind' value='1'" + String(moveEnabled ? " checked" : "") + " style='width:auto;'>Enabled</label>"
+          "<label class='label'>Interval (minutes)</label>"
+          "<input type='number' name='moveMin' min='5' max='120' value='" + String(moveIntervalMin) + "'></div>";
+  page += "</div></div>";
 
-  page += "</div>";
   page += "</div></div>";
 
   // ── Habits panel ──────────────────────────────────────────
@@ -3215,18 +3191,28 @@ void handleRoot() {
   page += "</div></div>";
   page += "</div></div>";
 
-  page += "</div><div class='stack'>";
+  // ── Notes page content ────────────────────────────────────────────────────
+  page += "<div class='panel collapsed' data-panel='notes'>";
+  page += "<button type='button' class='panel-toggle' aria-expanded='false'><h2>Notes</h2><span class='panel-chevron'>&#9662;</span></button>";
+  page += "<div class='panel-body'>";
+  page += "<p>Text shown on the Notes page of the device.</p>";
+  page += "<label class='label'>Notes</label>";
+  page += "<textarea name='notes' maxlength='700'>";
+  page += htmlEscape(notesText);
+  page += "</textarea>";
+  page += "<div class='muted'>Saved notes show up right away.</div>";
+  page += "</div></div>";
 
-  // ── Quick sticky note ──────────────────────────────────────
-  page += "<div class='panel' data-panel='quicknote'>";
-  page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Quick Note</h2><span class='panel-chevron'>&#9662;</span></button>";
+  // ── Quick sticky note ─────────────────────────────────────────────────────
+  page += "<div class='panel collapsed' data-panel='quicknote'>";
+  page += "<button type='button' class='panel-toggle' aria-expanded='false'><h2>Quick Note</h2><span class='panel-chevron'>&#9662;</span></button>";
   page += "<div class='panel-body'>";
   page += "<p>Send a sticky note to the display. Also callable via: <code>curl http://" + WiFi.localIP().toString() + "/api/note -d '{\"msg\":\"text\"}'</code></p>";
   for (int i = 0; i < STICKY_COUNT; i++) {
     if (stickyNote[i].length() == 0) continue;
     page += "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:8px 10px;background:#0b1220;border:1px solid #38bdf830;border-radius:8px;'>";
     page += "<span style='flex:1;font-size:13px;color:#edf2f7;'>" + htmlEscape(stickyNote[i]) + "</span>";
-    page += "<a href='/api/note/clear?id=" + String(i) + "' style='color:#f87171;font-size:11px;text-decoration:none;' onclick=\"fetch('/api/note/clear',{method:'POST',body:'{\\\"id\\\":"+String(i)+"}',headers:{'Content-Type':'application/json'}});this.closest('div').remove();return false;\">✕</a>";
+    page += "<a href='/api/note/clear?id=" + String(i) + "' style='color:#f87171;font-size:11px;text-decoration:none;' onclick=\"fetch('/api/note/clear',{method:'POST',body:'{\\\"id\\\":"+String(i)+"}',headers:{'Content-Type':'application/json'}});this.closest('div').remove();return false;\">&#10005;</a>";
     page += "</div>";
   }
   page += "<div style='display:flex;gap:8px;margin-top:8px;'>";
@@ -3234,8 +3220,9 @@ void handleRoot() {
   page += "<button type='button' onclick=\"var v=document.getElementById('quickNoteInput').value;if(v){fetch('/api/note',{method:'POST',body:JSON.stringify({msg:v}),headers:{'Content-Type':'application/json'}}).then(()=>{location.reload();});}\">Send</button>";
   page += "</div></div></div>";
 
-  page += "<button type='submit'>Save to Deskbuddy</button>";
-  page += "</div></div></form>";
+  page += "</div>"; // end .stack
+  page += "<div class='save-bar'><button type='submit'>&#128190; Save to Deskbuddy</button></div>";
+  page += "</form>";
   page += "<script>";
   page += "var colorNames={accent:{standard:'Standard',ice:'Ice',white:'White',cyan:'Cyan',mint:'Mint',green:'Green',blue:'Blue',purple:'Purple',pink:'Pink',orange:'Orange',amber:'Amber',red:'Red'},text:{standard:'Standard',ice:'Ice',white:'White',cyan:'Cyan',mint:'Mint',green:'Green',blue:'Blue',purple:'Purple',pink:'Pink',orange:'Orange',amber:'Amber',red:'Red'},bg:{slate:'Slate',deep:'Deep black',nordic:'Nordic blue',forest:'Forest',coffee:'Coffee',soft:'Soft dark',midnight:'Midnight',graphite:'Graphite',garnet:'Garnet',ochre:'Ochre'}};";
   page += "var panelStorageKey='deskbuddy-panel-state-v1';";
@@ -3298,9 +3285,6 @@ void handleRoot() {
   page += "});";
   page += "})();";
   page += "</script>";
-  page += "<div style='text-align:center;padding:20px 0 8px;'>"
-          "<a href='/update' style='font-size:12px;color:#555;text-decoration:none;'>Update firmware</a>"
-          "</div>";
   page += "</div></body></html>";
 
   server.send(200, "text/html; charset=utf-8", page);
