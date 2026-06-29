@@ -349,25 +349,41 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .device-link-row a{font-size:12px;color:var(--accent);text-decoration:none;padding:6px 12px;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.2);border-radius:8px;}
 .device-link-row a:hover{background:rgba(56,189,248,.18);}
 
+/* ── STATUS DOT (topbar) ── */
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--border2);flex-shrink:0;transition:background .3s;}
+.status-dot.online{background:var(--green);animation:dot-pulse 2.5s ease-in-out infinite;}
+.topbar-link{display:flex;align-items:center;gap:8px;}
+
 /* ── BOTTOM BUILD BAR ── */
 .build-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(10,15,24,.97);backdrop-filter:blur(16px);border-top:1px solid var(--border2);z-index:200;}
-.build-bar-top{display:flex;align-items:center;gap:12px;padding:12px 24px;}
-.build-status{font-size:13px;color:var(--dim);flex:1;}
-.build-status strong{color:var(--text);}
-.build-status.ok strong{color:var(--green);}
-.build-status.err strong{color:var(--red);}
-.build-status.running strong{color:var(--accent);}
-.btn{border:none;border-radius:10px;padding:10px 22px;font:600 13px/1 system-ui;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px;}
+.build-progress{height:3px;background:transparent;overflow:hidden;position:relative;}
+.build-progress.active{background:rgba(56,189,248,.12);}
+.build-progress-fill{position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,var(--accent) 50%,transparent 100%);width:50%;transform:translateX(-100%);display:none;}
+.build-progress.active .build-progress-fill{display:block;animation:prog-slide 1.4s ease-in-out infinite;}
+@keyframes prog-slide{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+.build-bar-top{display:flex;align-items:center;gap:10px;padding:12px 24px;}
+.build-bar-left{flex:1;display:flex;align-items:center;gap:10px;min-width:0;}
+.build-status-dot{width:7px;height:7px;border-radius:50%;background:var(--border2);flex-shrink:0;transition:background .3s;}
+.build-status-dot.ok{background:var(--green);}
+.build-status-dot.err{background:var(--red);}
+.build-status-dot.running{background:var(--accent);animation:dot-pulse 1s ease-in-out infinite;}
+.build-status-text{font-size:12px;color:var(--dim);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.build-status-text strong{color:var(--text);font-weight:600;}
+.build-status-text.ok strong{color:var(--green);}
+.build-status-text.err strong{color:var(--red);}
+.build-status-text.running strong{color:var(--accent);}
+.btn{border:none;border-radius:10px;padding:10px 18px;font:600 13px/1 system-ui;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px;white-space:nowrap;}
 .btn-save{background:var(--panel);color:var(--dim);border:1px solid var(--border);}
 .btn-save:hover{border-color:var(--text);color:var(--text);}
 .btn-build{background:var(--panel2);color:var(--accent);border:1px solid rgba(56,189,248,.3);}
 .btn-build:hover{background:rgba(56,189,248,.1);}
 .btn-flash{background:var(--accent);color:#001018;}
 .btn-flash:hover{background:var(--accent2);}
-.btn-ota{background:#0d47a1;color:#e3f2fd;border:1px solid #1565c0;}
-.btn-ota:hover{background:#1565c0;}
-.btn:disabled{opacity:.4;cursor:not-allowed;}
-.terminal-toggle{background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;padding:4px 8px;border-radius:6px;}
+.btn-ota{background:linear-gradient(135deg,#0d47a1,#1565c0);color:#e3f2fd;border:1px solid rgba(21,101,192,.5);box-shadow:0 2px 8px rgba(13,71,161,.3);}
+.btn-ota:hover:not(:disabled){background:linear-gradient(135deg,#1565c0,#1976d2);box-shadow:0 4px 12px rgba(13,71,161,.4);}
+.btn:disabled{opacity:.35;cursor:not-allowed;}
+.usb-pill{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;background:rgba(0,0,0,.25);border-radius:4px;padding:2px 6px;color:inherit;opacity:.85;}
+.terminal-toggle{background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;padding:6px 10px;border-radius:6px;transition:color .15s;}
 .terminal-toggle:hover{color:var(--text);}
 
 /* ── TERMINAL ── */
@@ -383,7 +399,39 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .tl.warn{color:var(--yellow);}
 .tl.dim{color:var(--border2);}
 
+/* ── TOAST NOTIFICATIONS ── */
+.toast-wrap{position:fixed;top:20px;right:20px;display:flex;flex-direction:column-reverse;gap:10px;z-index:600;pointer-events:none;max-width:380px;}
+.toast{background:var(--panel2);border:1px solid var(--border2);border-radius:14px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;pointer-events:all;box-shadow:0 12px 40px rgba(0,0,0,.5);animation:toast-in .25s cubic-bezier(.34,1.56,.64,1);}
+.toast.ok{border-color:rgba(52,211,153,.35);background:rgba(18,40,30,.95);}
+.toast.err{border-color:rgba(248,113,113,.35);background:rgba(40,18,18,.95);}
+.toast.info{border-color:rgba(56,189,248,.25);background:rgba(12,28,45,.95);}
+.toast-icon{font-size:20px;line-height:1;flex-shrink:0;margin-top:1px;}
+.toast-body{flex:1;min-width:0;}
+.toast-title{font-size:13px;font-weight:700;color:var(--text);line-height:1.3;}
+.toast-msg{font-size:12px;color:var(--dim);line-height:1.4;margin-top:3px;}
+.toast-close{flex-shrink:0;background:none;border:none;color:var(--dim);cursor:pointer;font-size:18px;padding:0;line-height:1;transition:color .1s;}
+.toast-close:hover{color:var(--text);}
+@keyframes toast-in{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes toast-out{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.94)}}
+.toast.dying{animation:toast-out .2s ease-in forwards;}
+
+/* ── OTA CONFIRM MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(6px);z-index:400;display:none;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:linear-gradient(160deg,#161e2e,#111827);border:1px solid var(--border2);border-radius:22px;padding:36px;max-width:440px;width:calc(100% - 32px);box-shadow:0 32px 80px rgba(0,0,0,.7);}
+.modal-icon{font-size:40px;margin-bottom:18px;line-height:1;}
+.modal-title{font-size:20px;font-weight:800;color:var(--text);margin-bottom:10px;letter-spacing:-.01em;}
+.modal-desc{font-size:13px;color:var(--dim);line-height:1.7;margin-bottom:28px;}
+.modal-desc strong{color:var(--text);}
+.modal-desc code{background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.2);border-radius:6px;padding:2px 8px;font:600 12px/1 ui-monospace;color:var(--accent);}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;}
+.btn-cancel{background:var(--panel);border:1px solid var(--border);color:var(--dim);border-radius:10px;padding:11px 22px;font:600 13px/1 system-ui;cursor:pointer;transition:all .15s;}
+.btn-cancel:hover{border-color:var(--text);color:var(--text);}
+.btn-confirm{background:linear-gradient(135deg,#0d47a1,#1565c0);color:#e3f2fd;border:none;border-radius:10px;padding:11px 28px;font:700 13px/1 system-ui;cursor:pointer;transition:all .15s;box-shadow:0 4px 16px rgba(13,71,161,.4);}
+.btn-confirm:hover{background:linear-gradient(135deg,#1565c0,#1e88e5);box-shadow:0 6px 20px rgba(13,71,161,.5);}
+
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes dot-pulse{0%,100%{box-shadow:0 0 0 0 rgba(52,211,153,.4)}50%{box-shadow:0 0 0 5px rgba(52,211,153,.0)}}
 .spin{display:inline-block;animation:spin .7s linear infinite;}
 
 @media(max-width:700px){
@@ -395,6 +443,22 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 </head>
 <body>
 
+<!-- Toast container -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- OTA confirm modal -->
+<div class="modal-overlay" id="otaModal">
+  <div class="modal">
+    <div class="modal-icon">📡</div>
+    <div class="modal-title">Flash firmware over WiFi?</div>
+    <div class="modal-desc">This will push the last compiled firmware to <strong><code id="otaModalIp">—</code></strong>. The device will reboot automatically when the upload completes.</div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeOtaModal()">Cancel</button>
+      <button class="btn-confirm" onclick="confirmOta()">Flash OTA</button>
+    </div>
+  </div>
+</div>
+
 <div class="topbar">
   <div class="topbar-logo">🖥 Deskbuddy</div>
   <div class="nav-tabs">
@@ -402,7 +466,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     <button class="nav-tab" onclick="showTab('settings')">Settings</button>
   </div>
   <div class="topbar-sep"></div>
-  <a class="topbar-link" id="webuiLink" href="#" target="_blank">Open Device UI ↗</a>
+  <a class="topbar-link" id="webuiLink" href="#" target="_blank"><div class="status-dot" id="deviceDot"></div>Open Device UI ↗</a>
   <div class="topbar-badge" id="topBadge">Loading…</div>
 </div>
 
@@ -526,12 +590,16 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
 <!-- BUILD BAR -->
 <div class="build-bar">
+  <div class="build-progress" id="buildProgress"><div class="build-progress-fill"></div></div>
   <div class="build-bar-top">
-    <div class="build-status" id="buildStatus"><strong>Ready</strong> — change WiFi/location then compile &amp; flash, or open the Device UI for live settings</div>
+    <div class="build-bar-left">
+      <div class="build-status-dot" id="buildDot"></div>
+      <div class="build-status-text" id="buildStatus"><strong>Ready</strong> — open Device UI for live settings, or compile &amp; flash for WiFi/location changes</div>
+    </div>
     <button class="terminal-toggle" onclick="toggleTerminal()" id="termBtn">▲ Terminal</button>
     <button class="btn btn-save" onclick="saveConfig()">💾 Save config</button>
     <button class="btn btn-build" onclick="triggerBuild('build')" id="btnBuild">⚙ Compile</button>
-    <button class="btn btn-flash" onclick="triggerBuild('flash')" id="btnFlash">⚡ Compile &amp; Flash</button>
+    <button class="btn btn-flash" onclick="triggerBuild('flash')" id="btnFlash">⚡ Flash via USB <span class="usb-pill">USB</span></button>
     <button class="btn btn-ota" onclick="triggerOta()" id="btnOta" title="Push compiled firmware to device over WiFi">📡 Flash OTA</button>
   </div>
   <div class="terminal" id="terminal">
@@ -568,14 +636,17 @@ const MODULES = {
     { id:'ambient_color', icon:'🎨', title:'Ambient Color Shift', type:'widget', effort:'medium', builtin:true,
       desc:'Accent color shifts cyan → green as you complete habits. Enable it in the Habit Tracker section of Device UI.',
       webui:'#habits' },
-    { id:'context_clock', icon:'🕰', title:'Context Clock', type:'widget', effort:'medium', builtin:false,
-      desc:'Clock shows "Focus block · 1h 12m left" based on your work schedule instead of raw time.' },
+    { id:'context_clock', icon:'🕰', title:'Context Clock', type:'widget', effort:'easy', builtin:true,
+      desc:'Shows a second timezone\'s current time on the clock card, below the date row. Short label (e.g. NYC) and timezone set in Device UI.',
+      webui:'#contextclock' },
+    { id:'eye_break', icon:'👁', title:'Eye Break (20-20-20)', type:'widget', effort:'easy', builtin:true,
+      desc:'Every N minutes a full-screen overlay shows "Look away" with a 20-second countdown that auto-dismisses. Interval and enable/disable in Device UI.',
+      webui:'#reminders' },
+    { id:'movement_reminder', icon:'🏃', title:'Movement Reminder', type:'widget', effort:'easy', builtin:true,
+      desc:'Every N minutes a full-screen overlay shows "Time to move!" — tap anywhere to dismiss. Interval and enable/disable in Device UI.',
+      webui:'#reminders' },
     { id:'wfh_commute', icon:'🚶', title:'WFH Commute Ritual', type:'widget', effort:'easy', builtin:false,
       desc:'10-min commute ritual timer at day-start. Psychologically separates home mode from work mode.' },
-    { id:'eye_break', icon:'👁', title:'Eye Break (20-20-20)', type:'widget', effort:'easy', builtin:false,
-      desc:'Every 20 min: look 20 feet away for 20 seconds. Gentle alert, tap to dismiss.' },
-    { id:'movement_reminder', icon:'🏃', title:'Movement Reminder', type:'widget', effort:'easy', builtin:false,
-      desc:'Stand up / move reminder after configurable sit time (default 50 min). Tap to snooze.' },
   ],
   creative: [
     { id:'lunar_phase', icon:'🌙', title:'Lunar Phase Widget', type:'widget', effort:'easy', builtin:false,
@@ -592,6 +663,7 @@ const MODULES = {
 let config = {};
 let termOpen = false;
 let building = false;
+let otaRunning = false;
 
 function deviceUrl() {
   const ip = (config.device_ip || '').trim();
@@ -600,8 +672,87 @@ function deviceUrl() {
 
 function updateDeviceLinks() {
   const url = deviceUrl();
+  const hasIp = !!(config.device_ip || '').trim();
   document.getElementById('webuiLink').href = url;
   document.getElementById('settingsDeviceLink').href = url;
+  document.getElementById('deviceDot').className = 'status-dot' + (hasIp ? ' online' : '');
+  const ota = document.getElementById('btnOta');
+  if (!building && !otaRunning) {
+    ota.disabled = !hasIp;
+    ota.title = hasIp ? 'Push compiled firmware to device over WiFi' : 'Set device IP in Settings first';
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function toast(type, title, msg) {
+  const wrap = document.getElementById('toastWrap');
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  const icons = {ok:'✅', err:'❌', info:'📡'};
+  t.innerHTML =
+    '<div class="toast-icon">' + (icons[type] || 'ℹ') + '</div>' +
+    '<div class="toast-body"><div class="toast-title">' + title + '</div>' +
+    (msg ? '<div class="toast-msg">' + msg + '</div>' : '') + '</div>' +
+    '<button class="toast-close" onclick="this.parentElement.remove()">×</button>';
+  wrap.appendChild(t);
+  setTimeout(function() {
+    if (!t.parentElement) return;
+    t.classList.add('dying');
+    setTimeout(function() { t.remove(); }, 220);
+  }, 5000);
+}
+
+// ── OTA modal ─────────────────────────────────────────────────────────────
+function triggerOta() {
+  if (building || otaRunning) return;
+  const ip = (config.device_ip || '').trim();
+  if (!ip) {
+    toast('err', 'No device IP', 'Go to Settings and enter the device IP address first.');
+    return;
+  }
+  document.getElementById('otaModalIp').textContent = ip;
+  document.getElementById('otaModal').classList.add('open');
+}
+
+function closeOtaModal() {
+  document.getElementById('otaModal').classList.remove('open');
+}
+
+document.getElementById('otaModal').addEventListener('click', function(e) {
+  if (e.target === this) closeOtaModal();
+});
+
+function confirmOta() {
+  closeOtaModal();
+  otaRunning = true;
+  const btn = document.getElementById('btnOta');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">📡</span> Pushing…';
+  setBuildProgress(true);
+  setStatus('running', 'Pushing firmware over WiFi…');
+  fetch('/api/ota', { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      otaRunning = false;
+      btn.innerHTML = '📡 Flash OTA';
+      setBuildProgress(false);
+      updateDeviceLinks();
+      if (d.ok) {
+        setStatus('ok', 'OTA complete — device rebooting');
+        toast('ok', 'OTA flash successful', 'Device is rebooting. It will be back online in a few seconds.');
+      } else {
+        setStatus('err', 'OTA failed');
+        toast('err', 'OTA flash failed', d.error || 'Unknown error');
+      }
+    })
+    .catch(function() {
+      otaRunning = false;
+      btn.innerHTML = '📡 Flash OTA';
+      setBuildProgress(false);
+      updateDeviceLinks();
+      setStatus('err', 'OTA failed — is the device reachable?');
+      toast('err', 'OTA flash failed', 'Could not reach the device. Check the IP and make sure it\'s on the same network.');
+    });
 }
 
 function renderModules() {
@@ -681,12 +832,18 @@ async function saveConfig() {
   collectSettings();
   const r = await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config) });
   const btn = document.querySelector('.btn-save');
-  btn.textContent = r.ok ? '✓ Saved' : '✗ Error';
+  if (r.ok) {
+    btn.textContent = '✓ Saved';
+    toast('ok', 'Settings saved', null);
+  } else {
+    btn.textContent = '✗ Error';
+    toast('err', 'Save failed', null);
+  }
   setTimeout(() => btn.textContent = '💾 Save config', 1800);
 }
 
 function triggerBuild(mode) {
-  if (building) return;
+  if (building || otaRunning) return;
   collectSettings();
   fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config) })
     .then(() => {
@@ -696,56 +853,49 @@ function triggerBuild(mode) {
       clearTerminal();
       building = true;
       setBuildUI(true);
-      setStatus('running', mode === 'flash' ? 'Compiling & flashing…' : 'Compiling…');
+      setBuildProgress(true);
+      setStatus('running', mode === 'flash' ? 'Compiling & flashing via USB…' : 'Compiling…');
       fetch(mode === 'flash' ? '/api/flash' : '/api/build', { method:'POST' }).then(() => {
         const es = new EventSource('/api/stream');
         es.onmessage = e => {
           const msg = JSON.parse(e.data);
           if (msg.t === 'line') appendLine(msg.v);
           if (msg.t === 'done') {
-            es.close(); building = false; setBuildUI(false);
-            if (msg.v === 'success') setStatus('ok', mode === 'flash' ? 'Flashed successfully ✓' : 'Compiled successfully ✓');
-            else setStatus('err', 'Build failed — check terminal');
+            es.close(); building = false; setBuildUI(false); setBuildProgress(false);
+            if (msg.v === 'success') {
+              setStatus('ok', mode === 'flash' ? 'Flashed successfully' : 'Compiled successfully');
+              toast('ok', mode === 'flash' ? 'Flash via USB complete' : 'Compile complete',
+                mode === 'flash' ? 'Firmware uploaded. Device is running the new build.' : 'Firmware ready. Use Flash OTA to push wirelessly.');
+            } else {
+              setStatus('err', 'Build failed — check terminal');
+              toast('err', 'Build failed', 'Check the terminal output for details.');
+            }
           }
         };
-        es.onerror = () => { es.close(); building = false; setBuildUI(false); setStatus('err', 'Stream error'); };
+        es.onerror = () => { es.close(); building = false; setBuildUI(false); setBuildProgress(false); setStatus('err', 'Stream error'); };
       });
-    });
-}
-
-function triggerOta() {
-  if (building) return;
-  const btn = document.getElementById('btnOta');
-  btn.disabled = true;
-  btn.innerHTML = '📡 Pushing…';
-  setStatus('running', 'Pushing firmware to device over WiFi…');
-  fetch('/api/ota', { method: 'POST' })
-    .then(r => r.json())
-    .then(d => {
-      btn.disabled = false;
-      btn.innerHTML = '📡 Flash OTA';
-      if (d.ok) setStatus('ok', 'OTA flash complete — device is rebooting ✓');
-      else setStatus('err', 'OTA failed: ' + (d.error || 'unknown error'));
-    })
-    .catch(() => {
-      btn.disabled = false;
-      btn.innerHTML = '📡 Flash OTA';
-      setStatus('err', 'OTA failed — is the device reachable?');
     });
 }
 
 function setBuildUI(busy) {
   document.getElementById('btnBuild').disabled = busy;
   document.getElementById('btnFlash').disabled = busy;
-  document.getElementById('btnOta').disabled = busy;
-  document.getElementById('btnBuild').innerHTML = busy ? `<span class="spin">⚙</span> Compiling…` : `⚙ Compile`;
-  document.getElementById('btnFlash').innerHTML = busy ? `<span class="spin">⚡</span> Working…` : `⚡ Compile & Flash`;
+  if (busy) document.getElementById('btnOta').disabled = true;
+  document.getElementById('btnBuild').innerHTML = busy ? '<span class="spin">⚙</span> Compiling…' : '⚙ Compile';
+  document.getElementById('btnFlash').innerHTML = busy ? '<span class="spin">⚡</span> Working…' : '⚡ Flash via USB <span class="usb-pill">USB</span>';
+  if (!busy && !otaRunning) updateDeviceLinks();
+}
+
+function setBuildProgress(active) {
+  document.getElementById('buildProgress').classList.toggle('active', active);
 }
 
 function setStatus(cls, msg) {
-  const el = document.getElementById('buildStatus');
-  el.className = 'build-status ' + cls;
-  el.innerHTML = `<strong>${msg}</strong>`;
+  const dot = document.getElementById('buildDot');
+  const txt = document.getElementById('buildStatus');
+  dot.className = 'build-status-dot' + (cls ? ' ' + cls : '');
+  txt.className = 'build-status-text' + (cls ? ' ' + cls : '');
+  txt.innerHTML = '<strong>' + msg + '</strong>';
 }
 
 function appendLine(text) {
@@ -792,6 +942,7 @@ fetch('/api/config')
     loadSettingsUI();
     updateBadge();
     setStatus('', 'Ready — open Device UI for live settings, or compile & flash for WiFi/location changes');
+    updateDeviceLinks();
   });
 </script>
 </body>
