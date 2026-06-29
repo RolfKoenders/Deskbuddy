@@ -3268,7 +3268,13 @@ void handleRoot() {
   page += "});";
   // Widget drag-and-drop
   page += "(function(){";
-  page += "var wdgLabels={week:'Week',timer:'Timer',rain:'Rain',outdoor:'Outdoor',kp:'KP Index',uv:'UV Index',wind:'Wind',sun:'Sun',hydration:'Hydration',habits:'Habits'};";
+  // Build wdgLabels including current HA sensor names
+  page += "var wdgLabels={week:'Week',timer:'Timer',rain:'Rain',outdoor:'Outdoor',kp:'KP Index',uv:'UV Index',wind:'Wind',sun:'Sun',hydration:'Hydration',habits:'Habits'";
+  for (int i = 0; i < HA_SENSOR_COUNT; i++) {
+    String lbl = haSensorLabel[i].length() > 0 ? haSensorLabel[i] : ("HA Sensor " + String(i + 1));
+    page += ",ha" + String(i + 1) + ":'" + lbl + "'";
+  }
+  page += "};";
   page += "var dragKey=null,dragFrom=null;";
   page += "function setSlot(idx,key){";
   page += "var s=document.getElementById('ws'+idx);";
@@ -3277,7 +3283,7 @@ void handleRoot() {
   page += "document.getElementById('hs'+idx).value=key;";
   page += "}";
   page += "document.querySelectorAll('.wdg-chip').forEach(function(c){";
-  page += "c.addEventListener('dragstart',function(e){dragKey=c.getAttribute('data-key');dragFrom=null;c.classList.add('wdg-dragging');e.dataTransfer.effectAllowed='copy';e.dataTransfer.setData('text/plain',dragKey);});";
+  page += "c.addEventListener('dragstart',function(e){dragKey=c.getAttribute('data-key');dragFrom=null;c.classList.add('wdg-dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragKey);});";
   page += "c.addEventListener('dragend',function(){c.classList.remove('wdg-dragging');});";
   page += "});";
   page += "document.querySelectorAll('.wdg-slot').forEach(function(s){";
