@@ -141,7 +141,8 @@ enum HomeWidgetType {
   HOME_WIDGET_HA1,
   HOME_WIDGET_HA2,
   HOME_WIDGET_HA3,
-  HOME_WIDGET_HA4
+  HOME_WIDGET_HA4,
+  HOME_WIDGET_COUNTDOWN
 };
 
 const int HOME_SLOT_COUNT = 4;
@@ -226,6 +227,7 @@ const char* homeWidgetKey(HomeWidgetType type) {
     case HOME_WIDGET_HA2:        return "ha2";
     case HOME_WIDGET_HA3:        return "ha3";
     case HOME_WIDGET_HA4:        return "ha4";
+    case HOME_WIDGET_COUNTDOWN:  return "countdown";
     default:                     return "week";
   }
 }
@@ -246,6 +248,7 @@ const char* homeWidgetLabel(HomeWidgetType type) {
     case HOME_WIDGET_HA2:        return "HA Sensor 2";
     case HOME_WIDGET_HA3:        return "HA Sensor 3";
     case HOME_WIDGET_HA4:        return "HA Sensor 4";
+    case HOME_WIDGET_COUNTDOWN:  return "Countdown";
     default:                     return "Week";
   }
 }
@@ -265,6 +268,7 @@ HomeWidgetType homeWidgetFromKey(const String& key) {
   if (key == "ha2")        return HOME_WIDGET_HA2;
   if (key == "ha3")        return HOME_WIDGET_HA3;
   if (key == "ha4")        return HOME_WIDGET_HA4;
+  if (key == "countdown")  return HOME_WIDGET_COUNTDOWN;
   return HOME_WIDGET_WEEK;
 }
 
@@ -447,6 +451,14 @@ unsigned long timerDoneDialogStartedMs = 0;
 const unsigned long TIMER_DONE_DIALOG_MS = 60UL * 1000UL;
 bool flashModeEnabled = false;
 int timerPresetMin[6] = {1, 5, 10, 15, 25, 30};
+
+// Pomodoro
+bool pomodoroEnabled   = false;
+int  pomWorkMin        = 25;
+int  pomBreakMin       = 5;
+int  pomLongBreakMin   = 15;
+bool pomInBreak        = false;
+int  pomSessionCount   = 0;  // work sessions completed (0-3)
 bool wifiEnabled = true;
 bool wifiConnectInProgress = false;
 unsigned long wifiConnectStartedMs = 0;
@@ -501,9 +513,15 @@ static int habitsDoneCount() {
 // HYDRATION TRACKER
 // =========================================================
 int    hydrationCount   = 0;
-const int HYDRATION_GOAL = 8;
+int    hydrationGoal    = 8;
 String hydrationDate    = "";  // "YYYYMMDD"
 String cacheHydration   = "";
+
+// =========================================================
+// COUNTDOWN WIDGET
+// =========================================================
+String countdownLabel = "Event";
+String countdownDate  = "";  // "YYYYMMDD"
 
 // =========================================================
 // STICKY NOTES API
@@ -586,8 +604,11 @@ void setWifiEnabled(bool enabled);
 int sanitizeTimerMinutes(int value);
 void drawHydrationWidget(int x, int y, int w, int h, String& cache, bool force);
 void drawHabitsWidget(int x, int y, int w, int h, String& cache, bool force);
+void drawCountdownWidget(int x, int y, int w, int h, String& cache, bool force);
 void handleApiNote();
 void handleApiNoteClear();
+void handleApiHydrationReset();
+void handleApiHaEntities();
 
 // =========================================================
 // HELPERS
@@ -944,11 +965,29 @@ void updateFocusTimerState() {
   if ((long)(focusEndMs - now) <= 0) {
     focusRemainingSec = 0;
     focusTimerRunning = false;
-    focusTimerFinished = true;
     focusMenuOpen = false;
     cacheFocusTimer = "";
     clearHomeSlotCaches();
     cacheTimerMenu = "";
+
+    if (pomodoroEnabled) {
+      if (pomInBreak) {
+        pomInBreak = false;
+        startFocusTimer(pomWorkMin);
+      } else {
+        pomSessionCount++;
+        pomInBreak = true;
+        if (pomSessionCount >= 4) {
+          pomSessionCount = 0;
+          startFocusTimer(pomLongBreakMin);
+        } else {
+          startFocusTimer(pomBreakMin);
+        }
+      }
+      return;
+    }
+
+    focusTimerFinished = true;
     openTimerDoneDialog();
     return;
   }
@@ -1166,7 +1205,18 @@ void loadStoredSettings() {
 
   // Hydration
   hydrationCount = prefs.getInt("hydCount", 0);
+  hydrationGoal  = constrain(prefs.getInt("hydGoal", 8), 1, 20);
   hydrationDate  = prefs.getString("hydDate", "");
+
+  // Countdown widget
+  countdownLabel = prefs.getString("cdLabel", "Event");
+  countdownDate  = prefs.getString("cdDate", "");
+
+  // Pomodoro
+  pomodoroEnabled  = prefs.getBool("pomEn", false);
+  pomWorkMin       = constrain(prefs.getInt("pomWork", 25), 1, 90);
+  pomBreakMin      = constrain(prefs.getInt("pomBreak", 5), 1, 30);
+  pomLongBreakMin  = constrain(prefs.getInt("pomLong", 15), 5, 60);
 
   // Sticky notes
   for (int i = 0; i < STICKY_COUNT; i++) {
@@ -1759,27 +1809,44 @@ void drawFocusTimerWidget(int x, int y, int w, int h, String& cache, bool force 
   String value = formatTimerClock(focusRemainingSec);
   String hint = focusHintText();
   String combined = value + "|" + hint + "|" + String(focusMenuOpen ? 1 : 0) +
-                    "|" + String(COL_PANEL) + "|" + String(COL_ACCENT) + "|" + String(COL_TEXT);
+                    "|" + String(COL_PANEL) + "|" + String(COL_ACCENT) + "|" + String(COL_TEXT) +
+                    "|" + String(pomodoroEnabled ? 1 : 0) + "|" + String(pomInBreak ? 1 : 0) + "|" + String(pomSessionCount);
 
   if (!force && combined == cache) return;
   cache = combined;
 
   makeSpriteCard(sprSmall, w, h, true);
-
   sprSmall.setTextDatum(TL_DATUM);
-  sprSmall.setTextColor(COL_DIM, COL_PANEL);
-  sprSmall.drawString("Timer", 10, 8, 2);
 
-  if (focusMenuOpen) {
+  if (pomodoroEnabled) {
+    sprSmall.setTextColor(pomInBreak ? COL_GREEN : COL_ACCENT, COL_PANEL);
+    sprSmall.drawString(pomInBreak ? "BREAK" : "WORK", 10, 8, 2);
+  } else {
+    sprSmall.setTextColor(COL_DIM, COL_PANEL);
+    sprSmall.drawString("Timer", 10, 8, 2);
+  }
+
+  if (focusMenuOpen && !pomodoroEnabled) {
     sprSmall.setTextColor(COL_TEXT, COL_PANEL);
     sprSmall.drawString("Select", 10, 22, 4);
     sprSmall.setTextColor(COL_DIM, COL_PANEL);
     sprSmall.drawString("duration", 10, 44, 2);
+  } else if (pomodoroEnabled && !focusTimerRunning && !focusTimerFinished) {
+    sprSmall.setTextColor(COL_DIM, COL_PANEL);
+    sprSmall.drawString("Tap to", 10, 26, 2);
+    sprSmall.drawString("start", 10, 42, 2);
   } else {
     sprSmall.setTextColor(focusTimerFinished ? COL_GREEN : COL_TEXT, COL_PANEL);
     sprSmall.drawString(value, 10, 24, 4);
-    sprSmall.setTextColor(COL_DIM, COL_PANEL);
-    sprSmall.drawString(hint, 10, 49, 1);
+    if (pomodoroEnabled) {
+      for (int i = 0; i < 4; i++) {
+        uint16_t dc = (i < pomSessionCount % 4) ? COL_ACCENT : COL_STROKE;
+        sprSmall.fillCircle(10 + i * 12, 60, 4, dc);
+      }
+    } else {
+      sprSmall.setTextColor(COL_DIM, COL_PANEL);
+      sprSmall.drawString(hint, 10, 49, 1);
+    }
   }
 
   pushSpriteAndDelete(sprSmall, x, y);
@@ -1830,6 +1897,9 @@ void drawHomeSlotWidget(int slot, bool force = false) {
       drawWeatherStyleMetricSprite(x, y, w, h, lbl.c_str(), val, cacheHomeSlots[slot], force, haSensorUnit[hi]);
       break;
     }
+    case HOME_WIDGET_COUNTDOWN:
+      drawCountdownWidget(x, y, w, h, cacheHomeSlots[slot], force);
+      break;
   }
 }
 
@@ -2642,15 +2712,18 @@ void drawHydrationWidget(int x, int y, int w, int h, String& cache, bool force =
   sprSmall.setTextColor(COL_DIM, COL_PANEL);
   sprSmall.drawString("Water", 10, 8, 2);
 
-  String val = String(hydrationCount) + "/" + String(HYDRATION_GOAL);
-  uint16_t col = hydrationCount >= HYDRATION_GOAL ? COL_GREEN : COL_TEXT;
+  String val = String(hydrationCount) + "/" + String(hydrationGoal);
+  uint16_t col = hydrationCount >= hydrationGoal ? COL_GREEN : COL_TEXT;
   sprSmall.setTextColor(col, COL_PANEL);
   sprSmall.drawString(val, 10, 28, 4);
 
-  // Small progress dots
-  for (int i = 0; i < HYDRATION_GOAL; i++) {
+  // Progress dots (cap at 12, smaller radius if > 8)
+  int dotCount = min(hydrationGoal, 12);
+  int dotR = hydrationGoal > 8 ? 3 : 4;
+  int dotSpacing = hydrationGoal > 8 ? 9 : 12;
+  for (int i = 0; i < dotCount; i++) {
     uint16_t dc = (i < hydrationCount) ? COL_ACCENT : COL_STROKE;
-    sprSmall.fillCircle(10 + i * 12, 58, 4, dc);
+    sprSmall.fillCircle(10 + i * dotSpacing, 60, dotR, dc);
   }
   pushSpriteAndDelete(sprSmall, x, y);
 }
@@ -2670,6 +2743,50 @@ void drawHabitsWidget(int x, int y, int w, int h, String& cache, bool force = fa
   sprSmall.drawString(String(done) + "/" + String(total), 10, 28, 4);
   sprSmall.setTextColor(COL_DIM, COL_PANEL);
   sprSmall.drawString(done == total && total > 0 ? "All done!" : "Tap for details", 10, 55, 1);
+  pushSpriteAndDelete(sprSmall, x, y);
+}
+
+void drawCountdownWidget(int x, int y, int w, int h, String& cache, bool force = false) {
+  int days = 0;
+  bool hasDate = countdownDate.length() == 8;
+  if (hasDate) {
+    int yr = countdownDate.substring(0, 4).toInt();
+    int mo = countdownDate.substring(4, 6).toInt();
+    int dy = countdownDate.substring(6, 8).toInt();
+    time_t now = time(nullptr);
+    struct tm tgt = {};
+    tgt.tm_year = yr - 1900; tgt.tm_mon = mo - 1; tgt.tm_mday = dy; tgt.tm_hour = 12;
+    time_t tgtTime = mktime(&tgt);
+    struct tm today_tm; localtime_r(&now, &today_tm);
+    today_tm.tm_hour = 12; today_tm.tm_min = 0; today_tm.tm_sec = 0;
+    time_t todayNoon = mktime(&today_tm);
+    days = (int)(difftime(tgtTime, todayNoon) / 86400.0 + 0.5);
+  }
+
+  String combined = String(days) + "|" + countdownLabel + "|" + String(COL_PANEL) + String(COL_ACCENT);
+  if (!force && combined == cache) return;
+  cache = combined;
+
+  makeSpriteCard(sprSmall, w, h, false);
+  sprSmall.setTextDatum(TL_DATUM);
+  sprSmall.setTextColor(COL_DIM, COL_PANEL);
+  String lbl = countdownLabel.length() > 0 ? countdownLabel : "Event";
+  sprSmall.drawString(lbl.c_str(), 10, 8, 2);
+
+  if (!hasDate) {
+    sprSmall.setTextColor(COL_TEXT, COL_PANEL);
+    sprSmall.drawString("Set date", 10, 24, 4);
+    sprSmall.setTextColor(COL_ACCENT, COL_PANEL);
+    sprSmall.drawString("in web UI", 10, 52, 1);
+  } else if (days == 0) {
+    sprSmall.setTextColor(COL_GREEN, COL_PANEL);
+    sprSmall.drawString("TODAY!", 10, 26, 4);
+  } else {
+    sprSmall.setTextColor(COL_TEXT, COL_PANEL);
+    sprSmall.drawString(String(abs(days)), 10, 24, 4);
+    sprSmall.setTextColor(COL_ACCENT, COL_PANEL);
+    sprSmall.drawString(days > 0 ? "days away" : "days ago", 10, 52, 1);
+  }
   pushSpriteAndDelete(sprSmall, x, y);
 }
 
@@ -2768,7 +2885,20 @@ bool handleHomeTouch(int x, int y) {
     if (x < slotX || x >= slotX + slotW || y < slotY || y >= slotY + slotH) continue;
 
     if (homeWidgetSlots[slot] == HOME_WIDGET_TIMER) {
-      if (focusTimerFinished) {
+      if (pomodoroEnabled) {
+        if (!focusTimerRunning && !focusTimerFinished) {
+          pomInBreak = false;
+          pomSessionCount = 0;
+          startFocusTimer(pomWorkMin);
+        } else {
+          pomInBreak = false;
+          pomSessionCount = 0;
+          resetFocusTimer();
+        }
+        cacheFocusTimer = "";
+        clearHomeSlotCaches();
+        cacheTimerMenu = "";
+      } else if (focusTimerFinished) {
         resetFocusTimer();
       } else {
         focusMenuOpen = true;
@@ -2781,7 +2911,7 @@ bool handleHomeTouch(int x, int y) {
     }
 
     if (homeWidgetSlots[slot] == HOME_WIDGET_HYDRATION) {
-      if (hydrationCount < HYDRATION_GOAL) {
+      if (hydrationCount < hydrationGoal) {
         hydrationCount++;
         prefs.putInt("hydCount", hydrationCount);
         cacheHomeSlots[slot] = "";
@@ -2856,7 +2986,7 @@ void handleRoot() {
   }
 
   String page;
-  page.reserve(24000);
+  page.reserve(32000);
 
   page += "<!doctype html><html><head>";
   page += "<meta charset='utf-8'>";
@@ -2915,17 +3045,17 @@ void handleRoot() {
   page += "@media(max-width:600px){.grid,.grid-3,.timer-slot-grid,.settings-grid{grid-template-columns:1fr;}.color-row{grid-template-columns:1fr;}}";
   page += ".wdg-wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;}";
   page += ".wdg-screen{flex-shrink:0;}";
-  page += ".wdg-display{width:180px;background:#0b1220;border:2px solid #334155;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,.35);}";
-  page += ".wdg-clock{height:86px;background:#172235;border-bottom:1px solid #334155;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:#38bdf8;text-align:center;}";
+  page += ".wdg-display{width:180px;background:var(--p-bg,#0b1220);border:2px solid var(--p-stroke,#334155);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,.35);transition:background .3s,border-color .3s;}";
+  page += ".wdg-clock{height:86px;background:var(--p-panel,#172235);border-bottom:1px solid var(--p-stroke,#334155);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--p-acc,#38bdf8);text-align:center;transition:background .3s,color .3s;}";
   page += ".wdg-clock-time{font-size:22px;font-weight:700;letter-spacing:.04em;}";
-  page += ".wdg-clock-sub{font-size:9px;color:#64748b;letter-spacing:.03em;}";
+  page += ".wdg-clock-sub{font-size:9px;color:var(--p-dim,#64748b);letter-spacing:.03em;transition:color .3s;}";
   page += ".wdg-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px;}";
-  page += ".wdg-slot{min-height:52px;background:#0f1c2e;border:2px dashed #2d3f55;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#475569;text-align:center;padding:6px;line-height:1.3;cursor:grab;user-select:none;transition:border-color .15s,background .15s,color .15s;}";
-  page += ".wdg-slot.filled{border-style:solid;border-color:#38bdf840;color:#cbd5e1;background:#172235;}";
-  page += ".wdg-slot.wdg-over{border-color:#38bdf8!important;background:#0e2540!important;color:#38bdf8!important;}";
-  page += ".wdg-nav{height:28px;background:#172235;border-top:1px solid #334155;display:flex;align-items:center;justify-content:center;font-size:8px;color:#475569;gap:6px;}";
-  page += ".wdg-nav-dot{width:5px;height:5px;border-radius:50%;background:#334155;}";
-  page += ".wdg-nav-dot.active{background:#38bdf8;}";
+  page += ".wdg-slot{min-height:52px;background:var(--p-bg,#0f1c2e);border:2px dashed var(--p-stroke,#2d3f55);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#475569;text-align:center;padding:6px;line-height:1.3;cursor:grab;user-select:none;transition:border-color .15s,background .3s,color .15s;}";
+  page += ".wdg-slot.filled{border-style:solid;border-color:var(--p-acc-dim,#38bdf840);color:var(--p-txt,#cbd5e1);background:var(--p-panel,#172235);}";
+  page += ".wdg-slot.wdg-over{border-color:var(--p-acc,#38bdf8)!important;background:#0e2540!important;color:var(--p-acc,#38bdf8)!important;}";
+  page += ".wdg-nav{height:28px;background:var(--p-panel,#172235);border-top:1px solid var(--p-stroke,#334155);display:flex;align-items:center;justify-content:center;font-size:8px;color:#475569;gap:6px;transition:background .3s;}";
+  page += ".wdg-nav-dot{width:5px;height:5px;border-radius:50%;background:var(--p-stroke,#334155);}";
+  page += ".wdg-nav-dot.active{background:var(--p-acc,#38bdf8);transition:background .3s;}";
   page += ".wdg-palette{flex:1;min-width:200px;}";
   page += ".wdg-palette-label{font-size:12px;color:#64748b;margin-bottom:10px;}";
   page += ".wdg-chips{display:flex;flex-wrap:wrap;gap:8px;}";
@@ -2949,9 +3079,12 @@ void handleRoot() {
   page += "<button type='button' class='panel-toggle' aria-expanded='true'><h2>Widget Customization</h2><span class='panel-chevron'>&#9662;</span></button>";
   page += "<div class='panel-body'>";
   page += "<div class='wdg-wrap'>";
+  String previewBg  = themePreviewCss(bg);
+  String previewAcc = accentPreviewCss(accent);
+  String previewTxt = accentPreviewCss(txt);
   page += "<div class='wdg-screen'>";
-  page += "<div class='wdg-display'>";
-  page += "<div class='wdg-clock'><div class='wdg-clock-time'>12:00</div><div class='wdg-clock-sub'>Mon 28 Jun &nbsp;&bull;&nbsp; 18&deg;</div></div>";
+  page += "<div class='wdg-display' id='device-preview' style='--p-bg:" + previewBg + ";--p-acc:" + previewAcc + ";--p-txt:" + previewTxt + ";--p-panel:color-mix(in srgb," + previewBg + " 55%,#334155 45%);--p-stroke:color-mix(in srgb," + previewBg + " 30%,#334155 70%);--p-dim:color-mix(in srgb," + previewAcc + " 30%,#475569 70%);--p-acc-dim:color-mix(in srgb," + previewAcc + " 25%,transparent 75%);'>";
+  page += "<div class='wdg-clock'><div class='wdg-clock-time' id='preview-clock'>00:00</div><div class='wdg-clock-sub' id='preview-date'>&mdash;</div></div>";
   page += "<div class='wdg-grid'>";
   for (int i = 0; i < HOME_SLOT_COUNT; i++) {
     HomeWidgetType slotType = homeWidgetFromKey(homeSlotKeys[i]);
@@ -2974,7 +3107,8 @@ void handleRoot() {
     HOME_WIDGET_WEEK, HOME_WIDGET_TIMER, HOME_WIDGET_RAIN,
     HOME_WIDGET_OUTDOOR, HOME_WIDGET_KP, HOME_WIDGET_UV,
     HOME_WIDGET_WIND, HOME_WIDGET_SUN, HOME_WIDGET_HYDRATION, HOME_WIDGET_HABITS,
-    HOME_WIDGET_HA1, HOME_WIDGET_HA2, HOME_WIDGET_HA3, HOME_WIDGET_HA4
+    HOME_WIDGET_HA1, HOME_WIDGET_HA2, HOME_WIDGET_HA3, HOME_WIDGET_HA4,
+    HOME_WIDGET_COUNTDOWN
   };
   for (HomeWidgetType wt : wdgAllTypes) {
     String chipLabel = String(homeWidgetLabel(wt));
@@ -3137,6 +3271,35 @@ void handleRoot() {
           "<input type='number' name='moveMin' min='5' max='120' value='" + String(moveIntervalMin) + "'></div>";
   page += "</div></div>";
 
+  page += "<div class='settings-block'><span class='settings-title'>Hydration</span>";
+  page += "<div class='settings-desc'>Daily water intake goal. Tap the widget on the home screen to log a glass.</div>";
+  page += "<div class='settings-grid'>";
+  page += "<div><label class='label'>Daily goal (glasses)</label><input type='number' name='hydGoal' min='1' max='20' value='" + String(hydrationGoal) + "'></div>";
+  page += "<div style='display:flex;align-items:flex-end;'><button type='button' onclick=\"fetch('/api/hydration/reset',{method:'POST'}).then(function(){location.reload();})\" style='margin-bottom:0;width:100%;'>Reset today (" + String(hydrationCount) + "/" + String(hydrationGoal) + ")</button></div>";
+  page += "</div></div>";
+
+  page += "<div class='settings-block'><span class='settings-title'>Countdown Widget</span>";
+  page += "<div class='settings-desc'>Home screen widget counting days to a target date.</div>";
+  page += "<div class='settings-grid'>";
+  page += "<div><label class='label'>Label (e.g. Vacation)</label><input name='cdLabel' maxlength='12' value='" + htmlEscape(countdownLabel) + "'></div>";
+  {
+    String cdDateHtml = "";
+    if (countdownDate.length() == 8) {
+      cdDateHtml = countdownDate.substring(0,4) + "-" + countdownDate.substring(4,6) + "-" + countdownDate.substring(6,8);
+    }
+    page += "<div><label class='label'>Target date</label><input type='date' name='cdDate' value='" + cdDateHtml + "'></div>";
+  }
+  page += "</div></div>";
+
+  page += "<div class='settings-block'><span class='settings-title'>Pomodoro Mode</span>";
+  page += "<div class='settings-desc'>Auto-cycling focus timer: work &rarr; break &rarr; work. Long break after 4 sessions.</div>";
+  page += "<label style='display:flex;align-items:center;gap:10px;color:#edf2f7;margin-bottom:12px;'><input type='checkbox' name='pomEn' value='1'" + String(pomodoroEnabled ? " checked" : "") + " style='width:auto;'>Enable Pomodoro mode</label>";
+  page += "<div class='settings-grid'>";
+  page += "<div><label class='label'>Work (min)</label><input type='number' name='pomWork' min='1' max='90' value='" + String(pomWorkMin) + "'></div>";
+  page += "<div><label class='label'>Break (min)</label><input type='number' name='pomBreak' min='1' max='30' value='" + String(pomBreakMin) + "'></div>";
+  page += "<div><label class='label'>Long break (min)</label><input type='number' name='pomLong' min='5' max='60' value='" + String(pomLongBreakMin) + "'></div>";
+  page += "</div></div>";
+
   page += "</div></div>";
 
   // ── Habits panel ──────────────────────────────────────────
@@ -3168,11 +3331,12 @@ void handleRoot() {
   page += "<div><label class='label'>HA URL</label><input name='haUrl' value='" + htmlEscape(haUrl) + "' placeholder='http://homeassistant.local:8123'></div>";
   page += "<div><label class='label'>Long-lived access token</label><input type='password' name='haToken' value='" + htmlEscape(haToken) + "' placeholder='eyJ...'></div>";
   page += "</div></div>";
+  page += "<datalist id='ha-entities'></datalist>";
   page += "<div class='settings-block'><span class='settings-title'>Sensors (4 slots)</span><div class='settings-desc'>Entity IDs like sensor.office_temperature. Value + unit shown automatically.</div>";
   page += "<div class='grid'>";
   for (int i = 0; i < HA_SENSOR_COUNT; i++) {
     page += "<div><label class='label'>Sensor " + String(i+1) + " label</label><input name='haSl" + String(i) + "' value='" + htmlEscape(haSensorLabel[i]) + "'></div>";
-    page += "<div><label class='label'>Entity ID</label><input name='haSe" + String(i) + "' value='" + htmlEscape(haSensorEntity[i]) + "' placeholder='sensor.xxx'></div>";
+    page += "<div><label class='label'>Entity ID</label><input name='haSe" + String(i) + "' list='ha-entities' value='" + htmlEscape(haSensorEntity[i]) + "' placeholder='sensor.xxx'></div>";
   }
   page += "</div></div>";
   page += "<div class='settings-block'><span class='settings-title'>Controls (4 buttons)</span><div class='settings-desc'>Switches, lights, scenes, or scripts. Type determines tap behaviour.</div>";
@@ -3180,7 +3344,7 @@ void handleRoot() {
   for (int i = 0; i < HA_CTRL_COUNT; i++) {
     page += "<div><label class='label'>Control " + String(i+1) + " label</label><input name='haCl" + String(i) + "' value='" + htmlEscape(haCtrlLabel[i]) + "'></div>";
     page += "<div><label class='label'>Entity ID + type</label><div style='display:flex;gap:6px;'>";
-    page += "<input name='haCe" + String(i) + "' value='" + htmlEscape(haCtrlEntity[i]) + "' placeholder='switch.xxx' style='flex:2;'>";
+    page += "<input name='haCe" + String(i) + "' list='ha-entities' value='" + htmlEscape(haCtrlEntity[i]) + "' placeholder='switch.xxx' style='flex:2;'>";
     page += "<select name='haCt" + String(i) + "' style='flex:1;'>";
     const char* types[] = {"switch","light","scene","script"};
     for (const char* t : types) {
@@ -3253,10 +3417,58 @@ void handleRoot() {
   page += "if(panelId){state[panelId]=collapsed;writePanelState(state);}";
   page += "});";
   page += "});";
+  // Live preview color lookup tables (generated from C++ color functions)
+  page += "var BG_COLORS={";
+  {
+    const char* bgKeys[] = {"slate","deep","nordic","forest","coffee","soft","midnight","graphite","garnet","ochre"};
+    for (int i = 0; i < 10; i++) {
+      if (i > 0) page += ",";
+      page += String(bgKeys[i]) + ":'" + themePreviewCss(bgKeys[i]) + "'";
+    }
+  }
+  page += "};";
+  page += "var ACCENT_COLORS={";
+  {
+    const char* accKeys[] = {"standard","ice","white","cyan","mint","green","blue","purple","pink","orange","amber","red"};
+    for (int i = 0; i < 12; i++) {
+      if (i > 0) page += ",";
+      page += String(accKeys[i]) + ":'" + accentPreviewCss(accKeys[i]) + "'";
+    }
+  }
+  page += "};";
+  page += "function updatePreview(){";
+  page += "var bgKey=(document.querySelector('[name=bg]:checked')||{value:'slate'}).value;";
+  page += "var accKey=(document.querySelector('[name=accent]:checked')||{value:'cyan'}).value;";
+  page += "var txtKey=(document.querySelector('[name=text]:checked')||{value:'standard'}).value;";
+  page += "var preview=document.getElementById('device-preview');if(!preview)return;";
+  page += "var bg=BG_COLORS[bgKey]||BG_COLORS['slate'];";
+  page += "var acc=ACCENT_COLORS[accKey]||ACCENT_COLORS['cyan'];";
+  page += "var txt=ACCENT_COLORS[txtKey]||ACCENT_COLORS['standard'];";
+  page += "preview.style.setProperty('--p-bg',bg);";
+  page += "preview.style.setProperty('--p-acc',acc);";
+  page += "preview.style.setProperty('--p-txt',txt);";
+  page += "}";
+  page += "document.querySelectorAll('.swatch input').forEach(function(r){r.addEventListener('change',updatePreview);});";
+  page += "updatePreview();";
+  // Live clock in preview
+  page += "function updatePreviewClock(){";
+  page += "var c=document.getElementById('preview-clock');var d=document.getElementById('preview-date');if(!c)return;";
+  page += "var now=new Date();";
+  page += "c.textContent=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');";
+  page += "if(d){var dy=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];var mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];";
+  page += "d.textContent=dy[now.getDay()]+' '+now.getDate()+' '+mo[now.getMonth()];}";
+  page += "}";
+  page += "updatePreviewClock();setInterval(updatePreviewClock,30000);";
+  // HA entities autocomplete
+  page += "if(document.getElementById('ha-entities')){";
+  page += "fetch('/api/ha/entities').then(function(r){return r.json();}).then(function(ents){";
+  page += "var dl=document.getElementById('ha-entities');";
+  page += "ents.forEach(function(e){var opt=document.createElement('option');opt.value=e.e;opt.label=e.n;dl.appendChild(opt);});";
+  page += "}).catch(function(){});}";
   // Widget drag-and-drop
   page += "(function(){";
   // Build wdgLabels including current HA sensor names
-  page += "var wdgLabels={week:'Week',timer:'Timer',rain:'Rain',outdoor:'Outdoor',kp:'KP Index',uv:'UV Index',wind:'Wind',sun:'Sun',hydration:'Hydration',habits:'Habits'";
+  page += "var wdgLabels={week:'Week',timer:'Timer',rain:'Rain',outdoor:'Outdoor',kp:'KP Index',uv:'UV Index',wind:'Wind',sun:'Sun',hydration:'Hydration',habits:'Habits',countdown:'Countdown'";
   for (int i = 0; i < HA_SENSOR_COUNT; i++) {
     String lbl = haSensorLabel[i].length() > 0 ? haSensorLabel[i] : ("HA Sensor " + String(i + 1));
     page += ",ha" + String(i + 1) + ":'" + lbl + "'";
@@ -3414,6 +3626,28 @@ void handleSave() {
   lastHaFetch = 0;  // force HA refresh after config change
   cacheHaPage = "";
 
+  // Hydration goal
+  if (server.hasArg("hydGoal")) {
+    hydrationGoal = constrain(server.arg("hydGoal").toInt(), 1, 20);
+    prefs.putInt("hydGoal", hydrationGoal);
+  }
+
+  // Countdown widget
+  if (server.hasArg("cdLabel")) { countdownLabel = server.arg("cdLabel"); countdownLabel.trim(); if (countdownLabel.length() == 0) countdownLabel = "Event"; prefs.putString("cdLabel", countdownLabel); }
+  if (server.hasArg("cdDate")) {
+    String d = server.arg("cdDate");
+    d.replace("-","");
+    countdownDate = (d.length() == 8) ? d : "";
+    prefs.putString("cdDate", countdownDate);
+  }
+
+  // Pomodoro
+  pomodoroEnabled = server.hasArg("pomEn");
+  prefs.putBool("pomEn", pomodoroEnabled);
+  if (server.hasArg("pomWork"))  { pomWorkMin       = constrain(server.arg("pomWork").toInt(),  1, 90); prefs.putInt("pomWork",  pomWorkMin); }
+  if (server.hasArg("pomBreak")) { pomBreakMin      = constrain(server.arg("pomBreak").toInt(), 1, 30); prefs.putInt("pomBreak", pomBreakMin); }
+  if (server.hasArg("pomLong"))  { pomLongBreakMin  = constrain(server.arg("pomLong").toInt(),  5, 60); prefs.putInt("pomLong",  pomLongBreakMin); }
+
   for (int i = 0; i < HOME_SLOT_COUNT; i++) {
     String key = String("homeSlot") + String(i);
     prefs.putString(key.c_str(), homeWidgetKey(homeWidgetSlots[i]));
@@ -3530,6 +3764,42 @@ void handleApiStatus() {
   server.send(200, "application/json", json);
 }
 
+void handleApiHydrationReset() {
+  hydrationCount = 0;
+  prefs.putInt("hydCount", 0);
+  for (int i = 0; i < HOME_SLOT_COUNT; i++) cacheHomeSlots[i] = "";
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleApiHaEntities() {
+  if (haUrl.isEmpty() || haToken.isEmpty()) { server.send(200, "application/json", "[]"); return; }
+  WiFiClient client;
+  HTTPClient http;
+  http.setTimeout(10000);
+  http.begin(client, haUrl + "/api/states");
+  http.addHeader("Authorization", "Bearer " + haToken);
+  int code = http.GET();
+  if (code != 200) { http.end(); server.send(200, "application/json", "[]"); return; }
+  StaticJsonDocument<128> filter;
+  filter[0]["entity_id"] = true;
+  filter[0]["attributes"]["friendly_name"] = true;
+  DynamicJsonDocument doc(20480);
+  deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+  http.end();
+  String out = "[";
+  bool first = true; int n = 0;
+  for (JsonObject e : doc.as<JsonArray>()) {
+    if (n++ >= 150) break;
+    if (!first) out += ",";
+    String eid = e["entity_id"].as<String>();
+    String fn = e["attributes"]["friendly_name"] | eid.c_str();
+    out += "{\"e\":\"" + eid + "\",\"n\":\"" + fn + "\"}";
+    first = false;
+  }
+  out += "]";
+  server.send(200, "application/json", out);
+}
+
 void handleOtaPage() {
   String page = "<!doctype html><html><head>"
     "<meta charset='utf-8'>"
@@ -3563,6 +3833,8 @@ void setupWebServer() {
   server.on("/api/note/clear", HTTP_POST, handleApiNoteClear);
   // Status JSON API
   server.on("/api/status", HTTP_GET, handleApiStatus);
+  server.on("/api/hydration/reset", HTTP_POST, handleApiHydrationReset);
+  server.on("/api/ha/entities", HTTP_GET, handleApiHaEntities);
 
   server.on("/update", HTTP_GET, handleOtaPage);
   server.on("/update", HTTP_POST,
