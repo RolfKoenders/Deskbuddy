@@ -3459,12 +3459,24 @@ void handleRoot() {
   page += "d.textContent=dy[now.getDay()]+' '+now.getDate()+' '+mo[now.getMonth()];}";
   page += "}";
   page += "updatePreviewClock();setInterval(updatePreviewClock,30000);";
-  // HA entities autocomplete
-  page += "if(document.getElementById('ha-entities')){";
-  page += "fetch('/api/ha/entities').then(function(r){return r.json();}).then(function(ents){";
+  // HA entities autocomplete — fetch on input (debounced) so we search all entities
+  page += "(function(){";
+  page += "var haTimer=null;";
+  page += "function fetchHaEntities(q){";
+  page += "clearTimeout(haTimer);";
+  page += "haTimer=setTimeout(function(){";
+  page += "fetch('/api/ha/entities'+(q?'?q='+encodeURIComponent(q):'')).then(function(r){return r.json();}).then(function(ents){";
   page += "var dl=document.getElementById('ha-entities');";
-  page += "ents.forEach(function(e){var opt=document.createElement('option');opt.value=e.e;opt.label=e.n;dl.appendChild(opt);});";
-  page += "}).catch(function(){});}";
+  page += "while(dl.firstChild)dl.removeChild(dl.firstChild);";
+  page += "ents.forEach(function(e){var o=document.createElement('option');o.value=e.e;o.label=e.n;dl.appendChild(o);});";
+  page += "}).catch(function(){});";
+  page += "},350);";
+  page += "}";
+  page += "document.querySelectorAll('input[list=\"ha-entities\"]').forEach(function(inp){";
+  page += "inp.addEventListener('focus',function(){fetchHaEntities(inp.value.split('.')[0]||'');});";
+  page += "inp.addEventListener('input',function(){fetchHaEntities(inp.value);});";
+  page += "});";
+  page += "})();";
   // Widget drag-and-drop
   page += "(function(){";
   // Build wdgLabels including current HA sensor names
@@ -3773,9 +3785,11 @@ void handleApiHydrationReset() {
 
 void handleApiHaEntities() {
   if (haUrl.isEmpty() || haToken.isEmpty()) { server.send(200, "application/json", "[]"); return; }
+  String q = server.arg("q");
+  q.toLowerCase();
   WiFiClient client;
   HTTPClient http;
-  http.setTimeout(10000);
+  http.setTimeout(15000);
   http.begin(client, haUrl + "/api/states");
   http.addHeader("Authorization", "Bearer " + haToken);
   int code = http.GET();
@@ -3783,16 +3797,21 @@ void handleApiHaEntities() {
   StaticJsonDocument<128> filter;
   filter[0]["entity_id"] = true;
   filter[0]["attributes"]["friendly_name"] = true;
-  DynamicJsonDocument doc(20480);
+  DynamicJsonDocument doc(40960);
   deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
   http.end();
   String out = "[";
   bool first = true; int n = 0;
   for (JsonObject e : doc.as<JsonArray>()) {
-    if (n++ >= 150) break;
-    if (!first) out += ",";
     String eid = e["entity_id"].as<String>();
     String fn = e["attributes"]["friendly_name"] | eid.c_str();
+    if (q.length() > 0) {
+      String eidL = eid; eidL.toLowerCase();
+      String fnL = fn;   fnL.toLowerCase();
+      if (eidL.indexOf(q) < 0 && fnL.indexOf(q) < 0) continue;
+    }
+    if (n++ >= 50) break;
+    if (!first) out += ",";
     out += "{\"e\":\"" + eid + "\",\"n\":\"" + fn + "\"}";
     first = false;
   }
