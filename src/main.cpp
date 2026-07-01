@@ -608,7 +608,6 @@ void drawCountdownWidget(int x, int y, int w, int h, String& cache, bool force);
 void handleApiNote();
 void handleApiNoteClear();
 void handleApiHydrationReset();
-void handleApiHaEntities();
 
 // =========================================================
 // HELPERS
@@ -3331,12 +3330,11 @@ void handleRoot() {
   page += "<div><label class='label'>HA URL</label><input name='haUrl' value='" + htmlEscape(haUrl) + "' placeholder='http://homeassistant.local:8123'></div>";
   page += "<div><label class='label'>Long-lived access token</label><input type='password' name='haToken' value='" + htmlEscape(haToken) + "' placeholder='eyJ...'></div>";
   page += "</div></div>";
-  page += "<datalist id='ha-entities'></datalist>";
   page += "<div class='settings-block'><span class='settings-title'>Sensors (4 slots)</span><div class='settings-desc'>Entity IDs like sensor.office_temperature. Value + unit shown automatically.</div>";
   page += "<div class='grid'>";
   for (int i = 0; i < HA_SENSOR_COUNT; i++) {
     page += "<div><label class='label'>Sensor " + String(i+1) + " label</label><input name='haSl" + String(i) + "' value='" + htmlEscape(haSensorLabel[i]) + "'></div>";
-    page += "<div><label class='label'>Entity ID</label><input name='haSe" + String(i) + "' list='ha-entities' value='" + htmlEscape(haSensorEntity[i]) + "' placeholder='sensor.xxx'></div>";
+    page += "<div><label class='label'>Entity ID</label><input name='haSe" + String(i) + "' value='" + htmlEscape(haSensorEntity[i]) + "' placeholder='sensor.xxx'></div>";
   }
   page += "</div></div>";
   page += "<div class='settings-block'><span class='settings-title'>Controls (4 buttons)</span><div class='settings-desc'>Switches, lights, scenes, or scripts. Type determines tap behaviour.</div>";
@@ -3344,7 +3342,7 @@ void handleRoot() {
   for (int i = 0; i < HA_CTRL_COUNT; i++) {
     page += "<div><label class='label'>Control " + String(i+1) + " label</label><input name='haCl" + String(i) + "' value='" + htmlEscape(haCtrlLabel[i]) + "'></div>";
     page += "<div><label class='label'>Entity ID + type</label><div style='display:flex;gap:6px;'>";
-    page += "<input name='haCe" + String(i) + "' list='ha-entities' value='" + htmlEscape(haCtrlEntity[i]) + "' placeholder='switch.xxx' style='flex:2;'>";
+    page += "<input name='haCe" + String(i) + "' value='" + htmlEscape(haCtrlEntity[i]) + "' placeholder='switch.xxx' style='flex:2;'>";
     page += "<select name='haCt" + String(i) + "' style='flex:1;'>";
     const char* types[] = {"switch","light","scene","script"};
     for (const char* t : types) {
@@ -3459,24 +3457,6 @@ void handleRoot() {
   page += "d.textContent=dy[now.getDay()]+' '+now.getDate()+' '+mo[now.getMonth()];}";
   page += "}";
   page += "updatePreviewClock();setInterval(updatePreviewClock,30000);";
-  // HA entities autocomplete — fetch on input (debounced) so we search all entities
-  page += "(function(){";
-  page += "var haTimer=null;";
-  page += "function fetchHaEntities(q){";
-  page += "clearTimeout(haTimer);";
-  page += "haTimer=setTimeout(function(){";
-  page += "fetch('/api/ha/entities'+(q?'?q='+encodeURIComponent(q):'')).then(function(r){return r.json();}).then(function(ents){";
-  page += "var dl=document.getElementById('ha-entities');";
-  page += "while(dl.firstChild)dl.removeChild(dl.firstChild);";
-  page += "ents.forEach(function(e){var o=document.createElement('option');o.value=e.e;o.label=e.n;dl.appendChild(o);});";
-  page += "}).catch(function(){});";
-  page += "},350);";
-  page += "}";
-  page += "document.querySelectorAll('input[list=\"ha-entities\"]').forEach(function(inp){";
-  page += "inp.addEventListener('focus',function(){fetchHaEntities(inp.value.split('.')[0]||'');});";
-  page += "inp.addEventListener('input',function(){fetchHaEntities(inp.value);});";
-  page += "});";
-  page += "})();";
   // Widget drag-and-drop
   page += "(function(){";
   // Build wdgLabels including current HA sensor names
@@ -3783,42 +3763,6 @@ void handleApiHydrationReset() {
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
-void handleApiHaEntities() {
-  if (haUrl.isEmpty() || haToken.isEmpty()) { server.send(200, "application/json", "[]"); return; }
-  String q = server.arg("q");
-  q.toLowerCase();
-  WiFiClient client;
-  HTTPClient http;
-  http.setTimeout(15000);
-  http.begin(client, haUrl + "/api/states");
-  http.addHeader("Authorization", "Bearer " + haToken);
-  int code = http.GET();
-  if (code != 200) { http.end(); server.send(200, "application/json", "[]"); return; }
-  StaticJsonDocument<128> filter;
-  filter[0]["entity_id"] = true;
-  filter[0]["attributes"]["friendly_name"] = true;
-  DynamicJsonDocument doc(40960);
-  deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-  http.end();
-  String out = "[";
-  bool first = true; int n = 0;
-  for (JsonObject e : doc.as<JsonArray>()) {
-    String eid = e["entity_id"].as<String>();
-    String fn = e["attributes"]["friendly_name"] | eid.c_str();
-    if (q.length() > 0) {
-      String eidL = eid; eidL.toLowerCase();
-      String fnL = fn;   fnL.toLowerCase();
-      if (eidL.indexOf(q) < 0 && fnL.indexOf(q) < 0) continue;
-    }
-    if (n++ >= 50) break;
-    if (!first) out += ",";
-    out += "{\"e\":\"" + eid + "\",\"n\":\"" + fn + "\"}";
-    first = false;
-  }
-  out += "]";
-  server.send(200, "application/json", out);
-}
-
 void handleOtaPage() {
   String page = "<!doctype html><html><head>"
     "<meta charset='utf-8'>"
@@ -3853,7 +3797,6 @@ void setupWebServer() {
   // Status JSON API
   server.on("/api/status", HTTP_GET, handleApiStatus);
   server.on("/api/hydration/reset", HTTP_POST, handleApiHydrationReset);
-  server.on("/api/ha/entities", HTTP_GET, handleApiHaEntities);
 
   server.on("/update", HTTP_GET, handleOtaPage);
   server.on("/update", HTTP_POST,
@@ -3987,7 +3930,6 @@ void setup() {
   ensureSunTimesForToday();
   ensureWeather();
   ensureKpIndex();
-
   setupWebServer();
 
   pageDirty = true;
